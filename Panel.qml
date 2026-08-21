@@ -244,25 +244,22 @@ Panel {
 
     function openFromHotkey() {
         refreshCurrent();
-        panel.openFromHotkey();
+        root.controller.show();
     }
 
     function close() {
-        panel.close();
+        root.controller.hide();
     }
 
     function toggle() {
-        if (panel.opened)
-            panel.close();
+        if (root.opened)
+            close();
         else
             openFromHotkey();
     }
 
     function closeForPopoutSwitch() {
-        if (panel.closeForPopoutSwitch)
-            panel.closeForPopoutSwitch();
-        else
-            close();
+        close();
     }
 
     Component.onCompleted: {
