@@ -6,7 +6,7 @@ import qs.Ui
 
 BarWidget {
     id: root
-    moduleName: "salted.TV"
+    moduleName: "salted.tv"
 
     visible: true
     implicitWidth: button.implicitWidth
@@ -14,7 +14,7 @@ BarWidget {
 
     readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
     readonly property string setupScript: Qt.resolvedUrl("salted-tv-setup.sh").toString().replace(/^file:\/\//, "")
-    readonly property string pendingOpenMarker: (Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")) + "/salted.TV/.pending-open"
+    readonly property string pendingOpenMarker: (Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")) + "/salted.tv/.pending-open"
     property bool bridgeReady: false
     property bool installing: false
     property string bridgeError: ""
@@ -42,11 +42,11 @@ BarWidget {
 
     function togglePanel() {
         if (panelLoader.status === Loader.Error) {
-            notify("salted.TV — Panel Load Error", "Failed to load Panel.qml — check logs", "critical");
+            notify("salted.tv — Panel Load Error", "Failed to load Panel.qml — check logs", "critical");
             return;
         }
         if (!panelLoader.item) {
-            notify("salted.TV — Panel Not Ready", "Loader status=" + panelLoader.status, "critical");
+            notify("salted.tv — Panel Not Ready", "Loader status=" + panelLoader.status, "critical");
             return;
         }
         if (!root.bridgeReady) {
@@ -84,9 +84,9 @@ BarWidget {
     function notify(title, body, urgency) {
         if (!root.notificationsEnabled) return
         var u = urgency || "normal";
-        var t = title || "salted.TV";
+        var t = title || "salted.tv";
         var b = body || "";
-        notifyProc.command = ["notify-send", "-a", "salted.TV", "-u", u, "-i", "video-display", t, b];
+        notifyProc.command = ["notify-send", "-a", "salted.tv", "-u", u, "-i", "video-display", t, b];
         notifyProc.running = true;
     }
 
@@ -108,7 +108,7 @@ BarWidget {
             root.bridgeReady = exitCode === 0;
             if (!root.bridgeReady) {
                 root.bridgeError = setupProc.errorOutput.trim() || "Bridge setup failed";
-                notify("salted.TV — Setup failed", root.bridgeError, "critical");
+                notify("salted.tv — Setup failed", root.bridgeError, "critical");
                 return;
             }
             var out = setupProc.setupOutput;
@@ -116,7 +116,7 @@ BarWidget {
             if (restartScheduled) {
                 if (!root.shellRestartQueued) {
                     root.shellRestartQueued = true;
-                    notify("salted.TV — Installed", "Restarting Omarchy shell once …", "normal");
+                    notify("salted.tv — Installed", "Restarting Omarchy shell once …", "normal");
                     restartProc.command = ["bash", "-c", "command -v omarchy-restart-shell >/dev/null 2>&1 && exec omarchy-restart-shell || echo 'omarchy-restart-shell not found; skipping'"];
                     restartProc.running = true;
                 }
@@ -162,8 +162,8 @@ BarWidget {
         visible: false
         onStatusChanged: {
             if (status === Loader.Error) {
-                console.warn("salted.TV Panel failed to load:", source);
-                root.notify("salted.TV — Loader Error", "Panel.qml failed to load (status Error)", "critical");
+                console.warn("salted.tv Panel failed to load:", source);
+                root.notify("salted.tv — Loader Error", "Panel.qml failed to load (status Error)", "critical");
             }
         }
         onLoaded: {
@@ -202,9 +202,9 @@ BarWidget {
 
             }
         }
-        tooltipText: root.installing ? "salted.TV • installing bridge …" :
-                     (root.bridgeReady ? "salted.TV • IPTV — free-to-air channels via iptv-org → mpv" :
-                      (root.bridgeError || "salted.TV • bridge not ready; click to retry"))
+        tooltipText: root.installing ? "salted.tv • installing bridge …" :
+                     (root.bridgeReady ? "salted.tv • IPTV — free-to-air channels via iptv-org → mpv" :
+                      (root.bridgeError || "salted.tv • bridge not ready; click to retry"))
         onPressed: root.togglePanel()
     }
 

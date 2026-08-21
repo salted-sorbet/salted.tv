@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# salted.TV setup — installs the bridge to ~/.cache/salted.TV and verifies tools.
+# salted.tv setup — installs the bridge to ~/.cache/salted.tv and verifies tools.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Never write inside the plugin dir — omarchy watches it with inotifywait -r
 # and any write triggers a full shell plugin reload (screen blink).
-RUNTIME="${XDG_CACHE_HOME:-$HOME/.cache}/salted.TV"
+RUNTIME="${XDG_CACHE_HOME:-$HOME/.cache}/salted.tv"
 BRIDGE_SRC="$DIR/bridge/salted-tv-bridge.py"
 BRIDGE_DST="$RUNTIME/salted-tv-bridge.py"
 VERSION="$(jq -er '.version' "$DIR/manifest.json" 2>/dev/null || echo "0.4.3")"
 VERSION_FILE="$RUNTIME/version"
 
-say()  { printf '\033[1;36m[salted.TV]\033[0m %s\n' "$*"; }
-warn() { printf '\033[1;33m[salted.TV]\033[0m %s\n' "$*"; }
-fail() { printf '\033[1;31m[salted.TV]\033[0m %s\n' "$*"; exit 1; }
+say()  { printf '\033[1;36m[salted.tv]\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m[salted.tv]\033[0m %s\n' "$*"; }
+fail() { printf '\033[1;31m[salted.tv]\033[0m %s\n' "$*"; exit 1; }
 
 command -v python3 >/dev/null 2>&1 || fail "python3 not found"
 command -v mpv >/dev/null 2>&1 || warn "mpv not found — install with: omarchy pkg add mpv"

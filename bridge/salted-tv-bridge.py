@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""salted.TV bridge — IPTV channel browser for the salted.TV shell plugin.
+"""salted.tv bridge — IPTV channel browser for the salted.tv shell plugin.
 
 Pure stdlib. Invoked as:  salted-tv-bridge.py '{"cmd":"ping"}'
 Prints a single JSON object to stdout.
@@ -34,8 +34,8 @@ import urllib.request
 from pathlib import Path
 
 HOME = Path.home()
-RUNTIME = Path(os.environ.get("XDG_CACHE_HOME", HOME / ".cache")) / "salted.TV"
-CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config")) / "salted.TV"
+RUNTIME = Path(os.environ.get("XDG_CACHE_HOME", HOME / ".cache")) / "salted.tv"
+CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config")) / "salted.tv"
 FAVORITES_FILE = CONFIG_DIR / "favorites.json"
 PID_FILE = RUNTIME / "play.pid"
 LOG_FILE = RUNTIME / "play.log"
@@ -80,7 +80,7 @@ def which(name):
 
 
 def fetch(url, timeout=60):
-    req = urllib.request.Request(url, headers={"User-Agent": "salted.TV/0.3"})
+    req = urllib.request.Request(url, headers={"User-Agent": "salted.tv/0.3"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
 
@@ -312,7 +312,7 @@ def do_play(params):
 
     RUNTIME.mkdir(parents=True, exist_ok=True)
     cmd = ["mpv", "--force-window=immediate", "--no-terminal",
-           "--really-quiet", f"--title=salted.TV • {name or 'IPTV'}", url]
+           "--really-quiet", f"--title=salted.tv • {name or 'IPTV'}", url]
     with open(LOG_FILE, "ab") as log:
         log.write(f"\n=== {time.strftime('%F %T')} play {name!r} ===\n".encode())
         log.flush()

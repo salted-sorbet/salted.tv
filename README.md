@@ -1,6 +1,6 @@
-# salted.TV
+# salted.tv
 
-**salted.TV is an IPTV player for the Omarchy shell bar.** Paste any M3U
+**salted.tv is an IPTV player for the Omarchy shell bar.** Paste any M3U
 playlist URL, filter hundreds of channels as you type, star the good ones,
 and watch in mpv — all from a single icon in your status bar.
 GUI forked from [tenzin.animechy](https://github.com/yesheytenzin) (GPL-3.0).
@@ -11,7 +11,7 @@ GUI forked from [tenzin.animechy](https://github.com/yesheytenzin) (GPL-3.0).
   cached locally for a day after first fetch.
 - **Instant filtering** — narrow channels by name or group as you type.
 - **Favorites** — tap ☆ on any channel; browse them via ★ Favorites.
-  Stored in `~/.config/salted.TV/favorites.json`.
+  Stored in `~/.config/salted.tv/favorites.json`.
 - **mpv playback** — click a channel to open it in a detached mpv window;
   Stop in the panel ends playback.
 
@@ -30,18 +30,18 @@ omarchy pkg add mpv
 Install it the standard Omarchy way:
 
 ```bash
-omarchy plugin add https://github.com/salted-sorbet/salted.TV.git --enable
+omarchy plugin add https://github.com/salted-sorbet/salted.tv.git --enable
 ```
 
-This clones the plugin into `~/.config/omarchy/plugins/salted.TV` and, with
+This clones the plugin into `~/.config/omarchy/plugins/salted.tv` and, with
 `--enable`, pins the TV icon into your bar (it asks which section; default
 right). A TV icon appears in your bar. First click installs the bridge to
-`~/.cache/salted.TV/` automatically — then paste a playlist URL and watch.
+`~/.cache/salted.tv/` automatically — then paste a playlist URL and watch.
 
 ### Updating
 
 ```bash
-omarchy plugin update salted.TV
+omarchy plugin update salted.tv
 ```
 
 The bridge reinstalls itself when the plugin version changes.
@@ -49,10 +49,10 @@ The bridge reinstalls itself when the plugin version changes.
 ## Removal
 
 ```bash
-omarchy plugin remove salted.TV
+omarchy plugin remove salted.tv
 
 # optional: drop cached playlists and saved favorites too
-rm -rf ~/.cache/salted.TV ~/.config/salted.TV
+rm -rf ~/.cache/salted.tv ~/.config/salted.tv
 ```
 
 ## Layout
@@ -61,12 +61,12 @@ rm -rf ~/.cache/salted.TV ~/.config/salted.TV
 BarWidget.qml          bar icon (TV frame + play composite) + bridge bootstrap
 Panel.qml              channel browser: source dropdown, filter, favorites
 bridge/salted-tv-bridge.py   stdlib Python CLI: sources/channels/add/remove/play/stop/status
-salted-tv-setup.sh     installs bridge to ~/.cache/salted.TV, verifies tools
+salted-tv-setup.sh     installs bridge to ~/.cache/salted.tv, verifies tools
 ```
 
 The bridge never writes inside the plugin directory (omarchy watches it with
-inotify and reloads on change). Runtime state lives in `~/.cache/salted.TV/`,
-user data in `~/.config/salted.TV/`.
+inotify and reloads on change). Runtime state lives in `~/.cache/salted.tv/`,
+user data in `~/.config/salted.tv/`.
 
 ## Usage
 

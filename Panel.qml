@@ -12,7 +12,7 @@ Panel {
     property var anchorItem: null
     property var hostWidget: null
     readonly property var barIdentity: hostWidget || root
-    readonly property string bridge: (Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")) + "/salted.TV/salted-tv-bridge.py"
+    readonly property string bridge: (Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")) + "/salted.tv/salted-tv-bridge.py"
 
     property string sourceCode: ""
     property string loadedLabel: ""
@@ -33,7 +33,7 @@ Panel {
     property var pending: []
     property var cbChain: null
 
-    moduleName: "salted.TV"
+    moduleName: "salted.tv"
     implicitWidth: 640
     implicitHeight: 470
 
@@ -43,7 +43,7 @@ Panel {
         property string collected: ""
 
         onExited: function(code, status) {
-            console.log("[salted.TV] bridge exited code=" + code + " bytes=" + bridgeProc.collected.length);
+            console.log("[salted.tv] bridge exited code=" + code + " bytes=" + bridgeProc.collected.length);
             var cb = root.cbChain;
             root.cbChain = null;
             var resp = null;
@@ -105,7 +105,7 @@ Panel {
     }
 
     function _start(cmd, params, cb) {
-        console.log("[salted.TV] _start " + cmd);
+        console.log("[salted.tv] _start " + cmd);
         bridgeProc.collected = "";
         root.cbChain = cb;
         var req = JSON.parse(JSON.stringify(params));
@@ -161,7 +161,7 @@ Panel {
 
     function loadChannels() {
         var src = root.viewingFavorites ? "favorites" : root.sourceCode.trim();
-        console.log("[salted.TV] loadChannels src=" + src + " q=" + root.searchText);
+        console.log("[salted.tv] loadChannels src=" + src + " q=" + root.searchText);
         if (!src) {
             statusText = "Pick a country first";
             return ;
@@ -357,7 +357,7 @@ Panel {
                         }
 
                         Text {
-                            text: "salted.TV"
+                            text: "salted.tv"
                             font.family: Style.font.family
                             font.pixelSize: Style.font.title
                             font.bold: true
