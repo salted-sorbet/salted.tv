@@ -8,7 +8,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUNTIME="${XDG_CACHE_HOME:-$HOME/.cache}/salted.TV"
 BRIDGE_SRC="$DIR/bridge/salted-tv-bridge.py"
 BRIDGE_DST="$RUNTIME/salted-tv-bridge.py"
-VERSION="$(jq -er '.version' "$DIR/manifest.json" 2>/dev/null || echo "0.1.0")"
+VERSION="$(jq -er '.version' "$DIR/manifest.json" 2>/dev/null || echo "0.2.0")"
 VERSION_FILE="$RUNTIME/version"
 
 say()  { printf '\033[1;36m[salted.TV]\033[0m %s\n' "$*"; }
@@ -28,34 +28,8 @@ fi
 say "installing bridge $VERSION → $BRIDGE_DST"
 install -Dm0755 "$BRIDGE_SRC" "$BRIDGE_DST"
 
-say "checking SDR toolchain ..."
-have_soapy=false; have_rx=false; have_tv=false
-if command -v SoapySDRUtil >/dev/null 2>&1; then
-  have_soapy=true
-  say "SoapySDRUtil found"
-else
-  warn "SoapySDRUtil missing — install with: omarchy pkg add soapysdr"
-fi
-if command -v rx_fm >/dev/null 2>&1 && command -v rx_power >/dev/null 2>&1; then
-  have_rx=true
-  say "rx-tools found (rx_fm / rx_sdr / rx_power)"
-else
-  warn "rx-tools missing (FM + scan disabled) — install from AUR: paru -S rx-tools"
-fi
-if command -v leandvb >/dev/null 2>&1; then
-  have_tv=true
-  say "leandvb found (DVB-T enabled)"
-else
-  warn "leandvb missing (DVB-T TV disabled) — optional: paru -S leandvb"
-fi
-
-say "probing SDR devices ..."
-if $have_soapy && SoapySDRUtil --find= 2>/dev/null | grep -q 'driver='; then
-  say "SDR device(s) detected:"
-  SoapySDRUtil --find= 2>/dev/null | grep 'driver=' | sed 's/^/  /'
-else
-  warn "no SDR device detected — plug one in and restart the shell"
-fi
+# Drop stale SDR-era caches so the new bridge starts clean.
+rm -f "$RUNTIME/version" "$RUNTIME"/playlist-*.m3u 2>/dev/null || true
 
 say "verifying bridge ..."
 if ! python3 "$BRIDGE_DST" '{"cmd":"ping"}' 2>/dev/null | grep -q '"ok": *true'; then

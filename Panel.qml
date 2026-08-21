@@ -14,20 +14,18 @@ Panel {
     readonly property var barIdentity: hostWidget || root
     readonly property string bridge: (Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")) + "/salted.TV/salted-tv-bridge.py"
 
-    property string band: "fm"
-    property string freqText: "100.1"
-    property string gainText: ""
-    property var channels: ({
-        "fm": [],
-        "tv": []
-    })
-    property var stations: []
+    property string sourceText: ""
+    property string loadedLabel: ""
+    property string searchText: ""
+    property bool viewingFavorites: false
+    property var favMap: ({})
+    property string selName: ""
+    property string selUrl: ""
     property bool busy: false
     property string busyLabel: ""
-    property string statusText: "SoapySDR tuner — pick a channel or type a frequency"
+    property string statusText: "IPTV — type a country code (us, de, fr …) or 'favorites', then Load"
     property bool playing: false
-    property int channelsGen: 0
-    property int scanGen: 0
+    property int loadGen: 0
     property int statusGen: 0
 
     property var pending: []
@@ -77,6 +75,14 @@ Panel {
         onTriggered: root.pollStatus()
     }
 
+    Timer {
+        id: searchTimer
+
+        interval: 380
+        repeat: false
+        onTriggered: root.loadChannels()
+    }
+
     ListModel {
         id: channelModel
     }
@@ -109,23 +115,55 @@ Panel {
         root.busyLabel = label || "";
     }
 
-    function applyChannels(ch) {
-        if (!ch)
-            return ;
-        root.channels = ch;
+    function applyChannels(resp) {
         channelModel.clear();
-        var lst = (band === "fm" ? ch.fm : ch.tv) || [];
+        var lst = (resp && resp.channels) ? resp.channels : [];
         for (var i = 0; i < lst.length; i++)
-            channelModel.append(lst[i]);
+            channelModel.append({
+                "name": String(lst[i].name || "Unnamed"),
+                "group": String(lst[i].group || ""),
+                "url": String(lst[i].url || "")
+            });
+        if (resp && resp.country)
+            root.loadedLabel = resp.country;
+    }
+
+    function loadFavorites() {
+        request("channels", {
+            "source": "favorites"
+        }, function(resp) {
+            var map = {
+            };
+            if (resp && resp.ok)
+                for (var i = 0; i < resp.channels.length; i++)
+                    map[resp.channels[i].url] = true;
+            root.favMap = map;
+        });
     }
 
     function loadChannels() {
-        var gen = ++root.channelsGen;
-        request("channels", {}, function(resp) {
-            if (gen !== root.channelsGen || !resp || !resp.ok)
+        var src = root.viewingFavorites ? "favorites" : root.sourceText.trim();
+        if (!src) {
+            statusText = "Enter a country code first";
+            return ;
+        }
+        var gen = ++root.loadGen;
+        setBusy("Loading " + src + " …");
+        request("channels", {
+            "source": src,
+            "q": root.searchText.trim()
+        }, function(resp) {
+            if (gen !== root.loadGen)
                 return ;
 
-            applyChannels(resp.channels);
+            setBusy("");
+            if (!resp || !resp.ok) {
+                statusText = (resp && resp.error) ? resp.error : "Load failed";
+                return ;
+            }
+            applyChannels(resp);
+            var scope = resp.total !== resp.count ? " • filtered " + resp.count + " of " + resp.total : " • " + resp.count + " channels";
+            statusText = resp.country + scope;
         });
     }
 
@@ -139,29 +177,18 @@ Panel {
         });
     }
 
-    function validFreq() {
-        var f = parseFloat(freqText.replace(",", "."));
-        if (isNaN(f))
-            return -1;
-        if (band === "fm" && (f < 87.5 || f > 108))
-            return -1;
-        if (band === "tv" && (f < 47 || f > 860))
-            return -1;
-        return Math.round(f * 1000) / 1000;
-    }
-
-    function doPlay(freq) {
-        var f = (freq !== undefined) ? freq : validFreq();
-        if (f < 0) {
-            statusText = band === "fm" ? "FM frequency must be 87.5–108 MHz" : "DVB-T frequency must be 47–860 MHz";
+    function playChannel(idx) {
+        if (idx < 0 || idx >= channelModel.count)
             return ;
-        }
-        var g = gainText.trim() === "" ? null : parseFloat(gainText);
-        setBusy("Tuning " + f + " MHz …");
+        var ch = channelModel.get(idx);
+        if (!ch.url)
+            return ;
+        root.selName = ch.name;
+        root.selUrl = ch.url;
+        setBusy("Opening " + ch.name + " …");
         request("play", {
-            "band": band,
-            "freq": f,
-            "gain": g
+            "url": ch.url,
+            "name": ch.name
         }, function(resp) {
             setBusy("");
             if (!resp || !resp.ok) {
@@ -169,68 +196,48 @@ Panel {
                 return ;
             }
             root.playing = true;
-            statusText = "Playing " + band.toUpperCase() + " " + f + " MHz in mpv";
+            statusText = "Playing " + ch.name + " in mpv";
         });
     }
 
-    function doStop() {
+    function stopPlayback() {
         request("stop", {}, function(resp) {
             root.playing = false;
             statusText = (resp && resp.ok) ? "Stopped" : "Stop failed";
         });
     }
 
-    function doScan() {
-        if (root.busy)
-            return ;
-        var gen = ++root.scanGen;
-        setBusy("Scanning FM band …");
-        stations = [];
-        request("scan", {}, function(resp) {
-            if (gen !== root.scanGen)
-                return ;
-
-            setBusy("");
-            if (!resp || !resp.ok) {
-                statusText = (resp && resp.error) ? resp.error : "Scan failed";
-                return ;
-            }
-            root.stations = resp.stations || [];
-            statusText = root.stations.length ? ("Found " + root.stations.length + " candidate station(s)") : "No stations found above noise floor";
-        });
+    function isFav(url) {
+        return root.favMap[url] === true;
     }
 
-    function addCurrent() {
-        var f = validFreq();
-        if (f < 0) {
-            statusText = "Enter a valid frequency first";
+    function toggleFav(idx) {
+        if (idx < 0 || idx >= channelModel.count)
             return ;
-        }
-        request("add", {
-            "band": band,
-            "freq": f,
-            "name": f + " MHz"
+        var ch = channelModel.get(idx);
+        var wasFav = isFav(ch.url);
+        var cmd = wasFav ? "remove" : "add";
+        request(cmd, {
+            "url": ch.url,
+            "name": ch.name
         }, function(resp) {
-            if (!resp || !resp.ok) {
-                statusText = (resp && resp.error) ? resp.error : "Save failed";
+            if (!resp || !resp.ok)
                 return ;
-            }
-            applyChannels(resp.channels);
-            statusText = "Saved " + f + " MHz to " + band.toUpperCase() + " channels";
-        });
-    }
-
-    function removeChannel(freq) {
-        request("remove", {
-            "band": band,
-            "freq": freq
-        }, function(resp) {
-            if (resp && resp.ok)
-                applyChannels(resp.channels);
+            var map = Object.assign({
+            }, root.favMap);
+            if (wasFav)
+                delete map[ch.url];
+            else
+                map[ch.url] = true;
+            root.favMap = map;
+            statusText = (wasFav ? "Removed " : "Saved ") + ch.name + (wasFav ? "" : " to favorites");
+            if (root.viewingFavorites && wasFav)
+                loadChannels();
         });
     }
 
     function refreshCurrent() {
+        loadFavorites();
         loadChannels();
         pollStatus();
     }
@@ -258,7 +265,10 @@ Panel {
             close();
     }
 
-    Component.onCompleted: refreshCurrent()
+    Component.onCompleted: {
+        loadFavorites();
+        pollStatus();
+    }
 
     KeyboardPanel {
         id: panel
@@ -319,7 +329,7 @@ Panel {
                         }
 
                         Text {
-                            text: root.band === "fm" ? "FM Radio" : "DVB-T • experimental"
+                            text: root.loadedLabel ? "IPTV • " + root.loadedLabel : "IPTV"
                             font.family: Style.font.family
                             font.pixelSize: Style.font.bodySmall
                             color: Qt.darker(Color.foreground, 1.25)
@@ -364,7 +374,7 @@ Panel {
 
                             Text {
                                 textFormat: Text.PlainText
-                                text: root.busy ? root.busyLabel : "On air"
+                                text: root.busy ? root.busyLabel : "Playing"
                                 font.family: Style.font.family
                                 font.pixelSize: Style.font.caption
                                 color: Color.accent
@@ -416,116 +426,49 @@ Panel {
                 Layout.fillWidth: true
                 spacing: 8
 
-                Button {
-                    text: "FM"
-                    tooltipText: "Broadcast FM radio (87.5–108 MHz)"
-                    selected: root.band === "fm"
-                    enabled: !root.busy
-                    onClicked: {
-                        root.band = "fm";
-                        root.freqText = "100.1";
-                        root.loadChannels();
-                    }
-                }
-
-                Button {
-                    text: "DVB-T"
-                    tooltipText: "Digital TV via leandvb software demodulation (experimental)"
-                    selected: root.band === "tv"
-                    enabled: !root.busy
-                    onClicked: {
-                        root.band = "tv";
-                        root.freqText = "474";
-                        root.loadChannels();
-                    }
-                }
-
                 TextField {
-                    id: freqField
+                    id: sourceField
 
-                    Layout.preferredWidth: 110
-                    placeholderText: root.band === "fm" ? "87.5–108" : "474"
-                    text: root.freqText
-                    onTextChanged: root.freqText = text
-                    onAccepted: root.doPlay()
+                    Layout.preferredWidth: 150
+                    placeholderText: "country: us, de, ng …"
+                    text: root.sourceText
+                    onTextChanged: root.sourceText = text
+                    onAccepted: root.loadChannels()
                     Keys.onEscapePressed: if (hasFocus) root.close()
                 }
 
-                Text {
-                    text: "MHz"
-                    font.family: Style.font.family
-                    font.pixelSize: Style.font.caption
-                    color: Qt.darker(Color.foreground, 1.35)
+                Button {
+                    text: "Load"
+                    iconText: "\uf002"
+                    tooltipText: "Load the iptv-org playlist for this country ('favorites' shows saved channels)"
+                    enabled: !root.busy
+                    onClicked: {
+                        root.viewingFavorites = root.sourceText.trim().toLowerCase() === "favorites";
+                        root.searchText = "";
+                        searchField.text = "";
+                        root.loadChannels();
+                    }
                 }
 
                 TextField {
-                    id: gainField
+                    id: searchField
 
-                    Layout.preferredWidth: 70
-                    placeholderText: "auto"
-                    text: root.gainText
-                    onTextChanged: root.gainText = text
-                }
-
-                Item {
                     Layout.fillWidth: true
-                }
-
-                Button {
-                    text: "Scan"
-                    iconText: "\uf002"
-                    tooltipText: "Power-scan the FM band with rx_power"
-                    enabled: root.band === "fm" && !root.busy
-                    onClicked: root.doScan()
-                }
-
-                Button {
-                    text: "Save"
-                    iconText: "\uf00c"
-                    tooltipText: "Save current frequency to channels"
-                    enabled: !root.busy
-                    onClicked: root.addCurrent()
+                    placeholderText: "Filter channels …"
+                    onTextChanged: {
+                        root.searchText = text;
+                        searchTimer.restart();
+                    }
+                    Keys.onEscapePressed: if (hasFocus) root.close()
                 }
 
                 Button {
                     text: root.playing ? "■ Stop" : "▶ Play"
                     selected: true
-                    enabled: !root.busy
-                    onClicked: root.playing ? root.doStop() : root.doPlay()
+                    enabled: !root.busy && (root.playing || root.selUrl !== "")
+                    onClicked: root.playing ? root.stopPlayback() : root.playChannel(channelModel.count > 0 ? 0 : -1)
                 }
 
-            }
-
-            Flow {
-                Layout.fillWidth: true
-                spacing: 6
-                visible: root.stations.length > 0 && root.band === "fm"
-
-                Repeater {
-                    model: root.stations
-
-                    Button {
-                        text: modelData.freq.toFixed(1) + " MHz"
-                        fontSize: Style.font.caption
-                        horizontalPadding: 10
-                        verticalPadding: 4
-                        onClicked: {
-                            root.freqText = String(modelData.freq);
-                            root.doPlay(modelData.freq);
-                        }
-                    }
-
-                }
-
-            }
-
-            Text {
-                Layout.fillWidth: true
-                visible: root.stations.length > 0 && root.band === "fm"
-                text: "Scan hits — click one to tune"
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption - 2
-                color: Qt.darker(Color.foreground, 1.5)
             }
 
             ListView {
@@ -535,23 +478,34 @@ Panel {
                 Layout.fillHeight: true
                 clip: true
                 spacing: 4
-                cacheBuffer: 200
+                cacheBuffer: 300
                 boundsBehavior: Flickable.StopAtBounds
                 maximumFlickVelocity: 3500
                 reuseItems: true
                 model: channelModel
 
+                ScrollBar.vertical: ScrollBar {
+                }
+
                 Text {
                     anchors.centerIn: parent
-                    visible: channelModel.count === 0
+                    visible: channelModel.count === 0 && !root.busy
                     text: {
-                        if (root.busy) return root.busyLabel;
-                        if (root.band === "tv") return "No DVB-T channels saved — type a frequency (e.g. 474) and Play";
-                        return "No channels yet — Scan the FM band or type a frequency and Save";
+                        if (root.viewingFavorites) return "No favorites yet — tap ☆ next to any channel";
+                        return "No channels loaded — type a country code above and hit Load";
                     }
                     font.family: Style.font.family
                     font.pixelSize: Style.font.caption
                     color: Qt.darker(Color.foreground, 1.5)
+                }
+
+                Text {
+                    anchors.centerIn: parent
+                    visible: root.busy
+                    text: root.busyLabel
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                    color: Color.accent
                 }
 
                 delegate: RowLayout {
@@ -560,24 +514,22 @@ Panel {
 
                     Button {
                         Layout.fillWidth: true
-                        text: model.name + "   •   " + Number(model.freq).toFixed(1) + " MHz"
+                        text: model.name + (model.group ? "   •   " + model.group : "")
                         leftAlign: true
                         fontSize: Style.font.caption
+                        selected: model.url === root.selUrl
                         enabled: !root.busy
-                        onClicked: {
-                            root.freqText = String(model.freq);
-                            root.doPlay(model.freq);
-                        }
+                        onClicked: root.playChannel(index)
                     }
 
                     Button {
-                        text: "✕"
-                        tooltipText: "Remove channel"
-                        fontSize: Style.font.caption - 2
+                        text: root.isFav(model.url) ? "★" : "☆"
+                        tooltipText: root.isFav(model.url) ? "Remove from favorites" : "Save to favorites"
+                        fontSize: Style.font.caption
                         horizontalPadding: 8
                         verticalPadding: 4
                         enabled: !root.busy
-                        onClicked: root.removeChannel(model.freq)
+                        onClicked: root.toggleFav(index)
                     }
 
                 }
@@ -597,7 +549,7 @@ Panel {
                 Text {
                     Layout.fillWidth: true
                     textFormat: Text.PlainText
-                    text: root.playing ? "On air — mpv window is your player; Stop here ends the stream" : "Bridge: ~/.cache/salted.TV/salted-tv-bridge.py • SoapySDR → rx-tools → mpv"
+                    text: "Streams by iptv-org • click a channel to play • ★ saves it"
                     elide: Text.ElideRight
                     font.family: Style.font.family
                     font.pixelSize: Style.font.caption - 2

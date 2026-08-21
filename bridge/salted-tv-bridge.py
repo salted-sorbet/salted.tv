@@ -1,48 +1,45 @@
 #!/usr/bin/env python3
-"""salted.TV bridge — SoapySDR tuner control for the salted.TV shell plugin.
+"""salted.TV bridge — IPTV channel browser for the salted.TV shell plugin.
 
 Pure stdlib. Invoked as:  salted-tv-bridge.py '{"cmd":"ping"}'
 Prints a single JSON object to stdout.
 
+Channel data comes from the iptv-org index (public, community-maintained).
+
 Commands:
-  ping                       probe tools + SDR devices
-  status                     is a stream running?
-  channels                   list saved channels {fm:[], tv:[]}
-  add    band name freq      save a channel
-  remove band freq           delete a channel
-  scan                       power-scan the FM band (slow)
-  play   band freq [gain]    start detached rx pipeline -> mpv
-  stop                       kill the running pipeline
+  ping                        tool check
+  countries                   list countries from iptv-org API (cached)
+  channels source [q]         list/search channels for a country code/name
+                              or "favorites"
+  add name url                save a favorite
+  remove url                  delete a favorite
+  play url [name]             play a stream in detached mpv
+  stop                        kill mpv
+  status                      is something playing?
 """
 
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
 import sys
 import time
+import urllib.request
 from pathlib import Path
 
 HOME = Path.home()
 RUNTIME = Path(os.environ.get("XDG_CACHE_HOME", HOME / ".cache")) / "salted.TV"
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config")) / "salted.TV"
-CHANNELS_FILE = CONFIG_DIR / "channels.json"
+FAVORITES_FILE = CONFIG_DIR / "favorites.json"
 PID_FILE = RUNTIME / "play.pid"
 LOG_FILE = RUNTIME / "play.log"
-
-FM_BAND = (87.5, 108.0)
-FM_STEP_KHZ = 100
-SCAN_TIMEOUT = 90
-
-TOOLS = {
-    "soapy": "SoapySDRUtil",
-    "rx_fm": "rx_fm",
-    "rx_sdr": "rx_sdr",
-    "rx_power": "rx_power",
-    "leandvb": "leandvb",
-    "mpv": "mpv",
-}
+COUNTRIES_API = "https://iptv-org.github.io/api/countries.json"
+COUNTRIES_CACHE = RUNTIME / "countries.json"
+COUNTRIES_TTL = 7 * 24 * 3600
+PLAYLIST_URL = "https://iptv-org.github.io/iptv/countries/{}.m3u"
+MAX_RESULTS = 400
 
 
 def out(obj):
@@ -58,49 +55,103 @@ def which(name):
     return shutil.which(name)
 
 
-def tools_report():
-    return {k: bool(which(v)) for k, v in TOOLS.items()}
+def fetch(url, timeout=30):
+    req = urllib.request.Request(url, headers={"User-Agent": "salted.TV/0.2"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read()
 
 
-def list_devices():
-    soapy = which(TOOLS["soapy"])
-    if not soapy:
-        return []
+def load_countries():
+    if COUNTRIES_CACHE.exists() and time.time() - COUNTRIES_CACHE.stat().st_mtime < COUNTRIES_TTL:
+        try:
+            return json.loads(COUNTRIES_CACHE.read_text())
+        except ValueError:
+            pass
     try:
-        p = subprocess.run(
-            [soapy, "--find="],
-            capture_output=True, text=True, timeout=15,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return []
-    drivers = []
-    for line in (p.stdout + p.stderr).splitlines():
-        line = line.strip()
-        if line.startswith("driver="):
-            drivers.append(line.split("=", 1)[1].split()[0])
-    return sorted(set(drivers))
+        data = json.loads(fetch(COUNTRIES_API))
+    except Exception as e:
+        if COUNTRIES_CACHE.exists():
+            try:
+                return json.loads(COUNTRIES_CACHE.read_text())
+            except ValueError:
+                pass
+        raise e
+    COUNTRIES_CACHE.write_text(json.dumps(data))
+    return data
 
 
-def load_channels():
+def resolve_country(query):
+    """Accept a 2-letter code or a unique prefix of a country name."""
+    q = query.strip().lower()
+    countries = load_countries()
+    for c in countries:
+        if c["code"].lower() == q:
+            return c
+    matches = [c for c in countries if c["name"].lower().startswith(q)]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        names = ", ".join(m["name"] for m in matches[:6])
+        raise ValueError(f"ambiguous country {query!r}: {names} …")
+    raise ValueError(f"unknown country {query!r}")
+
+
+def playlist_path(code):
+    return RUNTIME / f"playlist-{code.lower()}.m3u"
+
+
+def get_playlist(code):
+    """Download once per day, then parse from cache."""
+    path = playlist_path(code)
+    fresh = path.exists() and time.time() - path.stat().st_mtime < 24 * 3600
+    if not fresh:
+        data = fetch(PLAYLIST_URL.format(code.lower()), timeout=60)
+        RUNTIME.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".m3u.new")
+        tmp.write_bytes(data)
+        os.replace(tmp, path)
+    return parse_m3u(path)
+
+
+def parse_m3u(path):
+    channels = []
+    attrs_re = re.compile(r'([a-zA-Z0-9-]+)="([^"]*)"')
+    pending = None
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("#EXTINF:"):
+                _, _, title = line.partition(",")
+                attrs = dict(attrs_re.findall(line))
+                pending = {
+                    "name": title.strip(),
+                    "group": attrs.get("group-title", ""),
+                    "logo": attrs.get("tvg-logo", ""),
+                    "url": "",
+                }
+            elif line and not line.startswith("#") and pending is not None:
+                pending["url"] = line
+                if pending["name"]:
+                    channels.append(pending)
+                pending = None
+    return channels
+
+
+def load_favorites():
     try:
-        with open(CHANNELS_FILE) as f:
-            data = json.load(f)
-        if isinstance(data, dict):
-            return {
-                "fm": list(data.get("fm", [])),
-                "tv": list(data.get("tv", [])),
-            }
+        favs = json.loads(FAVORITES_FILE.read_text())
+        if isinstance(favs, list):
+            return favs
     except (OSError, ValueError):
         pass
-    return {"fm": [], "tv": []}
+    return []
 
 
-def save_channels(ch):
+def save_favorites(favs):
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = CHANNELS_FILE.with_suffix(".json.new")
-    with open(tmp, "w") as f:
-        json.dump(ch, f, indent=2)
-    os.replace(tmp, CHANNELS_FILE)
+    tmp = FAVORITES_FILE.with_suffix(".json.new")
+    tmp.write_text(json.dumps(favs, indent=2))
+    os.replace(tmp, FAVORITES_FILE)
 
 
 def read_pid():
@@ -120,31 +171,41 @@ def is_running(pid):
         return False
 
 
-def fm_pipeline(freq_mhz, gain):
-    cmd = ["rx_fm", "-f", f"{freq_mhz}M", "-M", "fm", "-s", "230k",
-           "-A", "std", "-l", "0", "-r", "48k"]
-    if gain is not None:
-        cmd += ["-g", str(gain)]
-    player = [
-        "mpv", "--force-window=immediate", "--no-terminal", "--really-quiet",
-        "--demuxer=rawaudio", "--demuxer-rawaudio-format=s16le",
-        "--demuxer-rawaudio-rate=48000", "--demuxer-rawaudio-channels=1",
-        f"--title=salted.TV • FM {freq_mhz} MHz", "-",
-    ]
-    return " ".join(_q(c) for c in cmd) + " | " + " ".join(_q(c) for c in player)
+def do_channels(params):
+    source = str(params.get("source", "")).strip()
+    query = str(params.get("q", "")).strip().lower()
 
+    if source.lower() in ("favorites", "favorite", "fav", "starred"):
+        chans = [
+            {"name": f.get("name", ""), "group": "favorite",
+             "logo": "", "url": f.get("url", "")}
+            for f in load_favorites() if f.get("url")
+        ]
+        total = len(chans)
+        label = "Favorites"
+    else:
+        if not source:
+            return err("no source given — pass a country code or 'favorites'")
+        try:
+            country = resolve_country(source)
+        except ValueError as e:
+            return err(str(e))
+        except Exception as e:
+            return err(f"could not reach iptv-org: {e}")
+        try:
+            chans = get_playlist(country["code"])
+        except Exception as e:
+            return err(f"playlist download failed: {e}")
+        total = len(chans)
+        label = country["name"]
 
-def dvbt_pipeline(freq_mhz, gain):
-    cmd = ["rx_sdr", "-f", f"{freq_mhz}M", "-s", "2400000", "-F", "cs16"]
-    if gain is not None:
-        cmd += ["-g", str(gain)]
-    demod = ["leandvb", "--standard", "DVB-T", "--in-BW", "8", "--out", "ts"]
-    player = [
-        "mpv", "--force-window=immediate", "--no-terminal", "--really-quiet",
-        f"--title=salted.TV • DVB-T {freq_mhz} MHz", "-",
-    ]
-    chain = " ".join(_q(c) for c in cmd) + " | " + " ".join(_q(c) for c in demod)
-    return chain + " | " + " ".join(_q(c) for c in player)
+    if query:
+        chans = [c for c in chans
+                 if query in c["name"].lower()
+                 or query in c["group"].lower()]
+    return {"ok": True, "country": label, "total": total,
+            "count": min(len(chans), MAX_RESULTS),
+            "channels": chans[:MAX_RESULTS]}
 
 
 def _q(part):
@@ -155,46 +216,32 @@ def _q(part):
 
 
 def do_play(params):
-    band = params.get("band", "fm")
-    freq = params.get("freq")
-    gain = params.get("gain")
-    try:
-        freq = round(float(freq), 3)
-    except (TypeError, ValueError):
-        return err("invalid frequency")
-
-    lo, hi = FM_BAND if band == "fm" else (47.0, 860.0)
-    if not (lo <= freq <= hi):
-        return err(f"{band.upper()} frequency out of range ({lo}-{hi} MHz)")
-
-    missing = [t for t in ("mpv", "rx_fm" if band == "fm" else "rx_sdr")
-               if not which(TOOLS[t])]
-    if not which(TOOLS["soapy"]):
-        missing.append(TOOLS["soapy"])
-    if band == "tv" and not which(TOOLS["leandvb"]):
-        missing.append(TOOLS["leandvb"])
-    if missing:
-        return err("missing tools: " + ", ".join(missing))
+    url = str(params.get("url", "")).strip()
+    name = str(params.get("name", "")).strip()
+    if not re.match(r"^https?://", url):
+        return err("invalid stream URL")
+    if not which("mpv"):
+        return err("mpv not found — install with: omarchy pkg add mpv")
 
     if is_running(read_pid()):
-        kill_pipeline()
+        kill_player()
 
     RUNTIME.mkdir(parents=True, exist_ok=True)
-    script = fm_pipeline(freq, gain) if band == "fm" else dvbt_pipeline(freq, gain)
+    cmd = ["mpv", "--force-window=immediate", "--no-terminal",
+           "--really-quiet", f"--title=salted.TV • {name or 'IPTV'}", url]
     with open(LOG_FILE, "ab") as log:
-        log.write(f"\n=== {time.strftime('%F %T')} {band} {freq} ===\n".encode())
+        log.write(f"\n=== {time.strftime('%F %T')} play {name!r} ===\n".encode())
         log.flush()
         proc = subprocess.Popen(
-            ["bash", "-c", script],
-            stdout=log, stderr=log,
+            cmd, stdout=log, stderr=log,
             stdin=subprocess.DEVNULL,
             start_new_session=True,
         )
     PID_FILE.write_text(str(proc.pid) + "\n")
-    return {"ok": True, "band": band, "freq": freq, "pid": proc.pid}
+    return {"ok": True, "pid": proc.pid}
 
 
-def kill_pipeline():
+def kill_player():
     pid = read_pid()
     if pid is None:
         return False
@@ -212,57 +259,6 @@ def kill_pipeline():
     return True
 
 
-def do_scan(params):
-    if not which(TOOLS["rx_power"]):
-        return err("rx_power not found (install rx-tools)")
-    lo, hi = FM_BAND
-    step_hz = FM_STEP_KHZ * 1000
-    span = f"{lo}M:{hi}M:{step_hz // 1000}k"
-    try:
-        p = subprocess.run(
-            [TOOLS["rx_power"], "-f", span, "-i", "1"],
-            capture_output=True, text=True, timeout=SCAN_TIMEOUT,
-        )
-    except subprocess.TimeoutExpired:
-        return err("scan timed out")
-    except OSError as e:
-        return err(f"rx_power failed: {e}")
-
-    points = []
-    for line in p.stdout.splitlines():
-        cols = line.split(",")
-        for col in cols[2:]:
-            if ":" not in col:
-                continue
-            freq_s, _, pow_s = col.partition(":")
-            try:
-                points.append((float(freq_s) / 1e6, float(pow_s)))
-            except ValueError:
-                continue
-    if not points:
-        return err("no scan data — is an SDR device connected?")
-
-    powers = sorted(pw for _, pw in points)
-    floor = powers[len(powers) // 2]
-    threshold = floor + 6.0
-
-    stations = []
-    cluster = []
-    for freq, pw in points + [(1e9, -999)]:
-        if pw >= threshold:
-            cluster.append((freq, pw))
-            continue
-        if cluster:
-            best = max(cluster, key=lambda c: c[1])
-            stations.append({
-                "freq": round(best[0], 3),
-                "power": round(best[1], 1),
-                "noiseFloor": round(floor, 1),
-            })
-            cluster = []
-    return {"ok": True, "stations": stations, "noiseFloor": round(floor, 1)}
-
-
 def main():
     RUNTIME.mkdir(parents=True, exist_ok=True)
     try:
@@ -273,45 +269,41 @@ def main():
     cmd = req.get("cmd", "")
 
     if cmd == "ping":
-        out({"ok": True, "tools": tools_report(), "devices": list_devices()})
-    elif cmd == "status":
-        pid = read_pid()
-        playing = is_running(pid)
-        out({"ok": True, "playing": playing, "pid": pid})
+        out({"ok": True,
+             "tools": {"mpv": bool(which("mpv")), "python3": True}})
+    elif cmd == "countries":
+        try:
+            cs = [{"name": c["name"], "code": c["code"]}
+                  for c in load_countries()]
+            out({"ok": True, "countries": cs})
+        except Exception as e:
+            out(err(f"iptv-org unreachable: {e}"))
     elif cmd == "channels":
-        out({"ok": True, "channels": load_channels()})
+        out(do_channels(req))
     elif cmd == "add":
-        ch = load_channels()
-        band = req.get("band", "fm")
-        try:
-            entry = {"name": str(req.get("name") or f"{float(req['freq'])} MHz"),
-                     "freq": round(float(req["freq"]), 3)}
-        except (KeyError, TypeError, ValueError):
-            out(err("add needs band, freq")); return
-        lst = ch.setdefault(band, [])
-        lst[:] = [c for c in lst if abs(c.get("freq", 0) - entry["freq"]) > 0.001]
-        lst.append(entry)
-        lst.sort(key=lambda c: c["freq"])
-        save_channels(ch)
-        out({"ok": True, "channels": ch})
+        favs = load_favorites()
+        entry = {"name": str(req.get("name", "")),
+                 "url": str(req.get("url", ""))}
+        if not entry["url"]:
+            out(err("add needs url")); return
+        favs[:] = [f for f in favs if f.get("url") != entry["url"]]
+        favs.append(entry)
+        save_favorites(favs)
+        out({"ok": True})
     elif cmd == "remove":
-        ch = load_channels()
-        band = req.get("band", "fm")
-        try:
-            freq = round(float(req["freq"]), 3)
-        except (TypeError, ValueError):
-            out(err("remove needs freq")); return
-        lst = ch.setdefault(band, [])
-        before = len(lst)
-        lst[:] = [c for c in lst if abs(c.get("freq", 0) - freq) > 0.001]
-        save_channels(ch)
-        out({"ok": True, "removed": before - len(lst), "channels": ch})
-    elif cmd == "scan":
-        out(do_scan(req))
+        url = str(req.get("url", ""))
+        favs = load_favorites()
+        before = len(favs)
+        favs[:] = [f for f in favs if f.get("url") != url]
+        save_favorites(favs)
+        out({"ok": True, "removed": before - len(favs)})
     elif cmd == "play":
         out(do_play(req))
     elif cmd == "stop":
-        out({"ok": True, "stopped": kill_pipeline()})
+        out({"ok": True, "stopped": kill_player()})
+    elif cmd == "status":
+        pid = read_pid()
+        out({"ok": True, "playing": is_running(pid), "pid": pid})
     else:
         out(err(f"unknown cmd: {cmd!r}"))
 

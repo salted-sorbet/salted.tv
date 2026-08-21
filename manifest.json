@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "salted.TV",
   "name": "salted.TV",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "salted",
-  "description": "Software-defined radio tuner in your bar — scan and listen to free-to-air FM radio, experimental DVB-T TV via SoapySDR, played through mpv. GUI forked from tenzin.animechy (GPL-3.0).",
+  "description": "IPTV in your bar — browse thousands of free-to-air channels from the iptv-org index by country, filter, favorite, and play in mpv. No tuner hardware needed. GUI forked from tenzin.animechy (GPL-3.0).",
   "kinds": ["bar-widget"],
   "entryPoints": {
     "barWidget": "BarWidget.qml"

@@ -179,7 +179,7 @@ BarWidget {
         text: "\uf26c"
         slotSize: Style.bar.statusSlot
         tooltipText: root.installing ? "salted.TV • installing bridge …" :
-                     (root.bridgeReady ? "salted.TV • SDR tuner — FM radio & DVB-T via SoapySDR → mpv" :
+                     (root.bridgeReady ? "salted.TV • IPTV — free-to-air channels via iptv-org → mpv" :
                       (root.bridgeError || "salted.TV • bridge not ready; click to retry"))
         onPressed: root.togglePanel()
     }

@@ -1,56 +1,52 @@
 # salted.TV
 
-Software-defined radio tuner for the Omarchy shell bar — scan and listen to
-free-to-air broadcast radio, with experimental digital TV, all routed through
-mpv. GUI forked from [tenzin.animechy](../tenzin.animechy/) (GPL-3.0).
+IPTV for the Omarchy shell bar — browse thousands of free-to-air live channels
+from the [iptv-org](https://github.com/iptv-org/iptv) index, filter them,
+favorite the good ones, and play in mpv. No tuner hardware required.
+GUI forked from [tenzin.animechy](../tenzin.animechy/) (GPL-3.0).
 
 ## What it does
 
-- **FM radio (solid)** — power-scan the 87.5–108 MHz band with `rx_power`,
-  click a hit to tune, or type a frequency directly. Audio chain:
-  `rx_fm` → raw PCM → `mpv`.
-- **DVB-T TV (experimental)** — software-demodulated digital TV via
-  `leandvb`: `rx_sdr` → `leandvb` → MPEG-TS → `mpv`. CPU-heavy; expect a
-  warm laptop and mixed results.
-- **Any SDR hardware** — everything goes through the SoapySDR abstraction,
-  so RTL-SDR, Airspy, HackRF, SDRplay, `soapy_remote`, etc. all work.
-- **Channel memory** — saved per band in `~/.config/salted.TV/channels.json`.
+- **Any country** — type a code (`us`, `de`, `ng`, `jp` …) or name and Load;
+  the playlist is fetched from iptv-org and cached locally for a day.
+- **Instant filtering** — type in the search field to narrow hundreds of
+  channels down as you type.
+- **Favorites** — tap ☆ on any channel; view them all with source
+  `favorites`. Stored in `~/.config/salted.TV/favorites.json`.
+- **mpv playback** — click a channel and it opens in a detached mpv window;
+  Stop in the panel ends it.
 
 ## Dependencies
 
-| Tool | Purpose | Install |
-|------|---------|---------|
-| `soapysdr` | device abstraction + probe | `omarchy pkg add soapysdr` |
-| Soapy module for your stick | e.g. `soapyrtlsdr`, `soapyairspy`, `soapyhackrf` | AUR / upstream |
-| `rx-tools` (`rx_fm`, `rx_sdr`, `rx_power`) | tuned sample streaming | `paru -S rx-tools` |
-| `mpv` | playback | `omarchy pkg add mpv` |
-| `leandvb` | DVB-T demodulation (optional) | `paru -S leandvb` |
+Just `python3` (already present) and `mpv`:
 
-The setup script checks all of this on first click and reports what's missing.
+```
+omarchy pkg add mpv
+```
 
 ## Layout
 
 ```
 BarWidget.qml          bar icon + bridge bootstrap (forked from animechy)
-Panel.qml              tuner panel: band toggle, frequency/gain, scan, channels
-bridge/salted-tv-bridge.py   stdlib Python CLI: ping/status/channels/scan/play/stop
-salted-tv-setup.sh     installs bridge to ~/.cache/salted.TV, verifies toolchain
+Panel.qml              channel browser: country picker, filter, favorites
+bridge/salted-tv-bridge.py   stdlib Python CLI: ping/countries/channels/add/remove/play/stop/status
+salted-tv-setup.sh     installs bridge to ~/.cache/salted.TV, verifies tools
 ```
 
 The bridge never writes inside the plugin directory (omarchy watches it with
-inotify and reloads on change). Runtime state lives in `~/.cache/salted.TV/`.
+inotify and reloads on change). Runtime state lives in `~/.cache/salted.TV/`,
+user data in `~/.config/salted.TV/`.
 
 ## Usage
 
 Click the TV icon in the bar:
 
-1. Pick **FM** or **DVB-T**.
-2. **Scan** (FM) shows candidate stations as chips — click to tune — or type
-   a frequency and hit **Play**.
-3. **Save** stores the current frequency; ✕ removes it.
-4. **Stop** tears down the pipeline.
+1. Type your country code and hit **Load**.
+2. Filter with the search field, click a channel to watch.
+3. ☆ saves it to favorites; browse those via source `favorites`.
+4. **Stop** closes the stream.
 
 ## License
 
 GPL-3.0 — see [LICENSE](LICENSE). Derived from tenzin.animechy, which is
-itself powered by ani-cli.
+itself powered by ani-cli. Channel data by the iptv-org community.
