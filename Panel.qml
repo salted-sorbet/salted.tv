@@ -119,13 +119,27 @@ Panel {
         root.busyLabel = label || "";
     }
 
+    function sanitize(s) {
+        var t = String(s === undefined || s === null ? "" : s);
+        t = t.replace(/<[^>]*>/g, " ");
+        t = t.replace(/&#(\d+);/g, function(m, d) {
+            return String.fromCodePoint(parseInt(d, 10));
+        });
+        t = t.replace(/&#x([0-9a-fA-F]+);/g, function(m, h) {
+            return String.fromCodePoint(parseInt(h, 16));
+        });
+        t = t.replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+             .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+        return t.replace(/\s+/g, " ").trim();
+    }
+
     function applyChannels(resp) {
         channelModel.clear();
         var lst = (resp && resp.channels) ? resp.channels : [];
         for (var i = 0; i < lst.length; i++)
             channelModel.append({
-                "name": String(lst[i].name || "Unnamed"),
-                "group": String(lst[i].group || ""),
+                "name": sanitize(lst[i].name) || "Unnamed",
+                "group": sanitize(lst[i].group),
                 "url": String(lst[i].url || "")
             });
         if (resp && resp.country)

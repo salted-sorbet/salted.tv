@@ -176,8 +176,32 @@ BarWidget {
         id: button
         anchors.fill: parent
         bar: root.bar
-        text: "\uf26c"
+        text: ""
         slotSize: Style.bar.statusSlot
+        iconComponent: Component {
+            Item {
+                anchors.fill: parent
+
+                Text {
+                    id: frame
+                    anchors.centerIn: parent
+                    text: "\uf26c"
+                    font.family: Style.font.family
+                    font.pixelSize: Style.bar.iconFont
+                    color: button.active && button.useActiveColor ? button.activeColor : button.foreground
+                }
+
+                Text {
+                    anchors.horizontalCenter: frame.horizontalCenter
+                    y: frame.y + frame.height * 0.22
+                    text: "\uf04b"
+                    font.family: Style.font.family
+                    font.pixelSize: Style.bar.iconFont * 0.34
+                    color: Color.accent
+                }
+
+            }
+        }
         tooltipText: root.installing ? "salted.TV • installing bridge …" :
                      (root.bridgeReady ? "salted.TV • IPTV — free-to-air channels via iptv-org → mpv" :
                       (root.bridgeError || "salted.TV • bridge not ready; click to retry"))
