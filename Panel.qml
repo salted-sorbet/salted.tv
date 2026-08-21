@@ -14,16 +14,17 @@ Panel {
     readonly property var barIdentity: hostWidget || root
     readonly property string bridge: (Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")) + "/salted.TV/salted-tv-bridge.py"
 
-    property string sourceText: ""
+    property string sourceCode: ""
     property string loadedLabel: ""
     property string searchText: ""
     property bool viewingFavorites: false
+    property var countries: []
     property var favMap: ({})
     property string selName: ""
     property string selUrl: ""
     property bool busy: false
     property string busyLabel: ""
-    property string statusText: "IPTV — type a country code (us, de, fr …) or 'favorites', then Load"
+    property string statusText: "IPTV — pick a country from the dropdown, click any channel to watch"
     property bool playing: false
     property int loadGen: 0
     property int statusGen: 0
@@ -41,6 +42,7 @@ Panel {
         property string collected: ""
 
         onExited: function(code, status) {
+            console.log("[salted.TV] bridge exited code=" + code + " bytes=" + bridgeProc.collected.length);
             var cb = root.cbChain;
             root.cbChain = null;
             var resp = null;
@@ -80,7 +82,7 @@ Panel {
 
         interval: 380
         repeat: false
-        onTriggered: root.loadChannels()
+        onTriggered: if (root.sourceCode || root.viewingFavorites) root.loadChannels()
     }
 
     ListModel {
@@ -102,6 +104,7 @@ Panel {
     }
 
     function _start(cmd, params, cb) {
+        console.log("[salted.TV] _start " + cmd);
         bridgeProc.collected = "";
         root.cbChain = cb;
         var req = JSON.parse(JSON.stringify(params));
@@ -142,9 +145,10 @@ Panel {
     }
 
     function loadChannels() {
-        var src = root.viewingFavorites ? "favorites" : root.sourceText.trim();
+        var src = root.viewingFavorites ? "favorites" : root.sourceCode.trim();
+        console.log("[salted.TV] loadChannels src=" + src + " q=" + root.searchText);
         if (!src) {
-            statusText = "Enter a country code first";
+            statusText = "Pick a country first";
             return ;
         }
         var gen = ++root.loadGen;
@@ -236,6 +240,23 @@ Panel {
         });
     }
 
+    function loadCountries() {
+        request("countries", {}, function(resp) {
+            if (!resp || !resp.ok)
+                return ;
+            var opts = [{
+                "value": "favorites",
+                "label": "★ Favorites"
+            }];
+            for (var i = 0; i < resp.countries.length; i++)
+                opts.push({
+                    "value": String(resp.countries[i].code).toLowerCase(),
+                    "label": resp.countries[i].name
+                });
+            root.countries = opts;
+        });
+    }
+
     function refreshCurrent() {
         loadFavorites();
         loadChannels();
@@ -264,6 +285,7 @@ Panel {
 
     Component.onCompleted: {
         loadFavorites();
+        loadCountries();
         pollStatus();
     }
 
@@ -423,24 +445,18 @@ Panel {
                 Layout.fillWidth: true
                 spacing: 8
 
-                TextField {
-                    id: sourceField
+                SearchableDropdown {
+                    id: countryDropdown
 
-                    Layout.preferredWidth: 150
-                    placeholderText: "country: us, de, ng …"
-                    text: root.sourceText
-                    onTextChanged: root.sourceText = text
-                    onAccepted: root.loadChannels()
-                    Keys.onEscapePressed: if (hasFocus) root.close()
-                }
-
-                Button {
-                    text: "Load"
-                    iconText: "\uf002"
-                    tooltipText: "Load the iptv-org playlist for this country ('favorites' shows saved channels)"
-                    enabled: !root.busy
-                    onClicked: {
-                        root.viewingFavorites = root.sourceText.trim().toLowerCase() === "favorites";
+                    Layout.preferredWidth: 240
+                    label: ""
+                    showLabel: false
+                    placeholderText: "Pick a country …"
+                    options: root.countries
+                    onChanged: function(value) {
+                        root.viewingFavorites = value === "favorites";
+                        if (!root.viewingFavorites)
+                            root.sourceCode = value;
                         root.searchText = "";
                         searchField.text = "";
                         root.loadChannels();
@@ -489,7 +505,7 @@ Panel {
                     visible: channelModel.count === 0 && !root.busy
                     text: {
                         if (root.viewingFavorites) return "No favorites yet — tap ☆ next to any channel";
-                        return "No channels loaded — type a country code above and hit Load";
+                        return "Pick a country above and the channel list appears here";
                     }
                     font.family: Style.font.family
                     font.pixelSize: Style.font.caption
