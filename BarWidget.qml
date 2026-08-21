@@ -196,7 +196,7 @@ BarWidget {
                     y: frame.y + frame.height * 0.22
                     text: "\uf04b"
                     font.family: Style.font.family
-                    font.pixelSize: Style.bar.iconFont * 0.34
+                    font.pixelSize: Style.bar.iconFont * 0.44
                     color: Color.accent
                 }
 
