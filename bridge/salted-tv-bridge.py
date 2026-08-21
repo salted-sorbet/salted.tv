@@ -18,9 +18,10 @@ Commands:
 
 Source forms:
   favorites | <country code or name> | global:index | global:freetv
-  category:<name>
+  category:<name> | language:<code> | region:<code> | url:<m3u URL>
 """
 
+import hashlib
 import json
 import os
 import re
@@ -42,6 +43,8 @@ LOG_FILE = RUNTIME / "play.log"
 IPTV_ORG = "https://iptv-org.github.io/iptv"
 COUNTRIES_API = "https://iptv-org.github.io/api/countries.json"
 CATEGORIES_API = "https://iptv-org.github.io/api/categories.json"
+LANGUAGES_API = "https://iptv-org.github.io/api/languages.json"
+REGIONS_API = "https://iptv-org.github.io/api/regions.json"
 FREE_TV_URL = "https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8"
 CACHE_TTL = 24 * 3600
 MAX_RESULTS = 2000
@@ -51,6 +54,16 @@ POPULAR_CATEGORIES = [
     "documentary", "entertainment", "comedy", "lifestyle",
     "culture", "religious", "travel", "business", "science",
 ]
+
+POPULAR_LANGUAGES = [
+    "ara", "eng", "fra", "spa", "deu", "por", "ita",
+    "rus", "tur", "hin", "zho", "ind", "fas", "tam",
+]
+
+REGION_LABELS = {
+    "afr": "Africa", "ame": "Americas", "asia": "Asia",
+    "eur": "Europe", "latn": "Latin America", "mena": "MENA",
+}
 
 
 def out(obj):
@@ -94,6 +107,22 @@ def load_categories():
     return [c for c in POPULAR_CATEGORIES if c in known] or POPULAR_CATEGORIES[:1]
 
 
+def load_language_names():
+    try:
+        langs = cached_json(RUNTIME / "languages.json", LANGUAGES_API, 7 * CACHE_TTL)
+        return {l["code"].lower(): l["name"] for l in langs if isinstance(l, dict)}
+    except Exception:
+        return {}
+
+
+def load_regions():
+    try:
+        regions = cached_json(RUNTIME / "regions.json", REGIONS_API, 7 * CACHE_TTL)
+        return [(r["code"].lower(), r["name"]) for r in regions if isinstance(r, dict)]
+    except Exception:
+        return list(REGION_LABELS.items())
+
+
 def resolve_country(query):
     q = query.strip().lower()
     countries = load_countries()
@@ -129,6 +158,20 @@ def resolve_source(src):
         if cat not in POPULAR_CATEGORIES:
             raise ValueError(f"unknown category {cat!r}")
         return f"{IPTV_ORG}/categories/{cat}.m3u", f"category:{cat}", f"{cat.title()} (all countries)"
+    if low.startswith("language:"):
+        lang = low.split(":", 1)[1].strip()
+        name = load_language_names().get(lang, lang.upper())
+        return f"{IPTV_ORG}/languages/{lang}.m3u", f"language:{lang}", f"{name} language (worldwide)"
+    if low.startswith("region:"):
+        reg = low.split(":", 1)[1].strip()
+        label = dict(load_regions()).get(reg, reg.title())
+        return f"{IPTV_ORG}/regions/{reg}.m3u", f"region:{reg}", f"{label} region"
+    if low.startswith("url:"):
+        raw = src[4:].strip()
+        if not re.match(r"^https?://", raw):
+            raise ValueError("custom URL must start with http(s)://")
+        digest = hashlib.md5(raw.encode()).hexdigest()[:12]
+        return raw, f"url:{digest}", "Custom playlist"
     if low in SOURCE_ROUTES:
         url, label = SOURCE_ROUTES[low]
         return url, low, label
@@ -217,6 +260,17 @@ def do_sources():
                 "value": f"category:{cat}",
                 "label": f"Category • {cat.title()}",
             })
+    except Exception:
+        pass
+    names = load_language_names()
+    for lang in POPULAR_LANGUAGES:
+        opts.append({
+            "value": f"language:{lang}",
+            "label": f"Language • {names.get(lang, lang.upper())}",
+        })
+    try:
+        for reg, name in load_regions():
+            opts.append({"value": f"region:{reg}", "label": f"Region • {name}"})
     except Exception:
         pass
     try:

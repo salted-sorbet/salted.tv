@@ -249,6 +249,26 @@ Panel {
         });
     }
 
+    function loadCustom(urlSource) {
+        var gen = ++root.loadGen;
+        setBusy("Loading custom playlist …");
+        request("channels", {
+            "source": urlSource,
+            "q": ""
+        }, function(resp) {
+            if (gen !== root.loadGen)
+                return ;
+
+            setBusy("");
+            if (!resp || !resp.ok) {
+                statusText = (resp && resp.error) ? resp.error : "Load failed";
+                return ;
+            }
+            applyChannels(resp);
+            statusText = resp.country + " • " + resp.count + " channels";
+        });
+    }
+
     function refreshCurrent() {
         loadFavorites();
         loadChannels();
@@ -472,6 +492,39 @@ Panel {
                     selected: true
                     enabled: !root.busy && (root.playing || root.selUrl !== "")
                     onClicked: root.playing ? root.stopPlayback() : root.playChannel(channelModel.count > 0 ? 0 : -1)
+                }
+
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                Text {
+                    text: "\uf0c1"
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.body
+                    color: Qt.darker(Color.foreground, 1.35)
+                }
+
+                TextField {
+                    id: customUrlField
+
+                    Layout.fillWidth: true
+                    placeholderText: "…or paste any M3U playlist URL (http…) and load it"
+                    Keys.onEscapePressed: if (hasFocus) clear()
+                }
+
+                Button {
+                    text: "Load URL"
+                    enabled: !root.busy && customUrlField.text.trim() !== ""
+                    onClicked: {
+                        var u = "url:" + customUrlField.text.trim();
+                        root.viewingFavorites = false;
+                        root.sourceCode = "";
+                        countryDropdown.value = "";
+                        root.loadCustom(u);
+                    }
                 }
 
             }
