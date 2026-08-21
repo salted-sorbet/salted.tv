@@ -252,35 +252,6 @@ def is_running(pid):
 
 def do_sources():
     opts = [{"value": "favorites", "label": "★ Favorites"}]
-    for key, (_, label) in SOURCE_ROUTES.items():
-        opts.append({"value": key, "label": label})
-    try:
-        for cat in load_categories():
-            opts.append({
-                "value": f"category:{cat}",
-                "label": f"Category • {cat.title()}",
-            })
-    except Exception:
-        pass
-    names = load_language_names()
-    for lang in POPULAR_LANGUAGES:
-        opts.append({
-            "value": f"language:{lang}",
-            "label": f"Language • {names.get(lang, lang.upper())}",
-        })
-    try:
-        for reg, name in load_regions():
-            opts.append({"value": f"region:{reg}", "label": f"Region • {name}"})
-    except Exception:
-        pass
-    try:
-        for c in load_countries():
-            opts.append({
-                "value": str(c["code"]).lower(),
-                "label": c["name"],
-            })
-    except Exception:
-        pass
     return {"ok": True, "sources": opts}
 
 

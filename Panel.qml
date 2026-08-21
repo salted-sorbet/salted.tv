@@ -463,7 +463,7 @@ Panel {
                     Layout.preferredWidth: 240
                     label: ""
                     showLabel: false
-                    placeholderText: "Pick a source — country, category, global …"
+                    placeholderText: "Source — ★ Favorites or paste a URL below"
                     options: root.sources
                     onChanged: function(value) {
                         root.viewingFavorites = value === "favorites";
