@@ -27,28 +27,21 @@ omarchy pkg add mpv
 
 ## Installation
 
-Clone straight into the Omarchy plugin directory:
+Install it the standard Omarchy way:
 
 ```bash
-git clone https://github.com/salted-sorbet/salted.TV.git \
-  ~/.config/omarchy/plugins/salted.TV
-omarchy restart shell
+omarchy plugin add https://github.com/salted-sorbet/salted.TV.git --enable
 ```
 
-A TV icon appears in your bar. First click installs the bridge to
-`~/.cache/salted.TV/` automatically — then pick a playlist URL and watch.
-
-To pin the widget into your bar layout permanently, add it via
-`omarchy bar` or edit `~/.config/omarchy/shell.json`:
-
-```json
-{ "id": "salted.TV" }
-```
+This clones the plugin into `~/.config/omarchy/plugins/salted.TV` and, with
+`--enable`, pins the TV icon into your bar (it asks which section; default
+right). A TV icon appears in your bar. First click installs the bridge to
+`~/.cache/salted.TV/` automatically — then paste a playlist URL and watch.
 
 ### Updating
 
 ```bash
-git -C ~/.config/omarchy/plugins/salted.TV pull
+omarchy plugin update salted.TV
 ```
 
 The bridge reinstalls itself when the plugin version changes.
@@ -56,16 +49,10 @@ The bridge reinstalls itself when the plugin version changes.
 ## Removal
 
 ```bash
-# remove the widget entry from your bar layout first (if present):
-#   edit ~/.config/omarchy/shell.json and delete the { "id": "salted.TV" } block
+omarchy plugin remove salted.TV
 
-# remove the plugin
-rm -rf ~/.config/omarchy/plugins/salted.TV
-
-# remove runtime cache (bridge copy, playlists) and user data (favorites)
+# optional: drop cached playlists and saved favorites too
 rm -rf ~/.cache/salted.TV ~/.config/salted.TV
-
-omarchy restart shell
 ```
 
 ## Layout
