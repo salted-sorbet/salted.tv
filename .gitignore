@@ -1,0 +1,2 @@
+*.bak.*
+bridge/__pycache__/
