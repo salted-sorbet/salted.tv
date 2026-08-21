@@ -80,6 +80,18 @@ Click the TV icon in the bar:
 Note: stream availability depends entirely on the playlist you provide —
 dead or geo-blocked links are normal; ☆ keeps the ones that work for you.
 
+## Security & privacy notes
+
+- The bridge runs as your user, needs no sudo, and only talks to the
+  playlist/API URLs you configure plus `iptv-org.github.io` defaults.
+- Every remote response is streamed in 64 KB chunks with a hard cap of
+  **32 MB** (checked against `Content-Length` first); oversized responses
+  abort before parsing or touching the disk cache.
+- Channel names from playlists are sanitized (tags stripped, HTML entities
+  decoded) before they reach the shell UI.
+- Nothing is installed outside `~/.config` / `~/.cache`; no services, no
+  build steps.
+
 ## License
 
 GPL-3.0 — see [LICENSE](LICENSE). Derived from tenzin.animechy, which is

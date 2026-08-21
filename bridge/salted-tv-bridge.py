@@ -79,10 +79,26 @@ def which(name):
     return shutil.which(name)
 
 
+MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+
+
 def fetch(url, timeout=60):
-    req = urllib.request.Request(url, headers={"User-Agent": "salted.tv/0.3"})
+    req = urllib.request.Request(url, headers={"User-Agent": "salted.tv/0.4"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read()
+        length = r.headers.get("Content-Length")
+        if length is not None and length.isdigit() and int(length) > MAX_RESPONSE_BYTES:
+            raise ValueError(f"remote response larger than {MAX_RESPONSE_BYTES} bytes")
+        chunks = []
+        total = 0
+        while True:
+            chunk = r.read(64 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_RESPONSE_BYTES:
+                raise ValueError(f"remote response larger than {MAX_RESPONSE_BYTES} bytes")
+            chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def cached_json(path, url, ttl):
