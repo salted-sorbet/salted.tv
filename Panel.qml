@@ -19,6 +19,7 @@ Panel {
     property string searchText: ""
     property bool viewingFavorites: false
     property var countries: []
+    property var sources: []
     property var favMap: ({})
     property string selName: ""
     property string selUrl: ""
@@ -240,20 +241,11 @@ Panel {
         });
     }
 
-    function loadCountries() {
-        request("countries", {}, function(resp) {
+    function loadSources() {
+        request("sources", {}, function(resp) {
             if (!resp || !resp.ok)
                 return ;
-            var opts = [{
-                "value": "favorites",
-                "label": "★ Favorites"
-            }];
-            for (var i = 0; i < resp.countries.length; i++)
-                opts.push({
-                    "value": String(resp.countries[i].code).toLowerCase(),
-                    "label": resp.countries[i].name
-                });
-            root.countries = opts;
+            root.sources = resp.sources || [];
         });
     }
 
@@ -285,7 +277,7 @@ Panel {
 
     Component.onCompleted: {
         loadFavorites();
-        loadCountries();
+        loadSources();
         pollStatus();
     }
 
@@ -451,8 +443,8 @@ Panel {
                     Layout.preferredWidth: 240
                     label: ""
                     showLabel: false
-                    placeholderText: "Pick a country …"
-                    options: root.countries
+                    placeholderText: "Pick a source — country, category, global …"
+                    options: root.sources
                     onChanged: function(value) {
                         root.viewingFavorites = value === "favorites";
                         if (!root.viewingFavorites)

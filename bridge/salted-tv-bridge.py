@@ -4,18 +4,21 @@
 Pure stdlib. Invoked as:  salted-tv-bridge.py '{"cmd":"ping"}'
 Prints a single JSON object to stdout.
 
-Channel data comes from the iptv-org index (public, community-maintained).
+Channel data comes from public community indexes: iptv-org and Free-TV.
 
 Commands:
   ping                        tool check
-  countries                   list countries from iptv-org API (cached)
-  channels source [q]         list/search channels for a country code/name
-                              or "favorites"
+  sources                     grouped source list for the dropdown
+  channels source [q]         list/search channels for a source
   add name url                save a favorite
   remove url                  delete a favorite
   play url [name]             play a stream in detached mpv
   stop                        kill mpv
   status                      is something playing?
+
+Source forms:
+  favorites | <country code or name> | global:index | global:freetv
+  category:<name>
 """
 
 import json
@@ -35,11 +38,19 @@ CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config")) / "salted
 FAVORITES_FILE = CONFIG_DIR / "favorites.json"
 PID_FILE = RUNTIME / "play.pid"
 LOG_FILE = RUNTIME / "play.log"
+
+IPTV_ORG = "https://iptv-org.github.io/iptv"
 COUNTRIES_API = "https://iptv-org.github.io/api/countries.json"
-COUNTRIES_CACHE = RUNTIME / "countries.json"
-COUNTRIES_TTL = 7 * 24 * 3600
-PLAYLIST_URL = "https://iptv-org.github.io/iptv/countries/{}.m3u"
-MAX_RESULTS = 400
+CATEGORIES_API = "https://iptv-org.github.io/api/categories.json"
+FREE_TV_URL = "https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8"
+CACHE_TTL = 24 * 3600
+MAX_RESULTS = 2000
+
+POPULAR_CATEGORIES = [
+    "news", "sports", "movies", "series", "music", "kids",
+    "documentary", "entertainment", "comedy", "lifestyle",
+    "culture", "religious", "travel", "business", "science",
+]
 
 
 def out(obj):
@@ -55,33 +66,35 @@ def which(name):
     return shutil.which(name)
 
 
-def fetch(url, timeout=30):
-    req = urllib.request.Request(url, headers={"User-Agent": "salted.TV/0.2"})
+def fetch(url, timeout=60):
+    req = urllib.request.Request(url, headers={"User-Agent": "salted.TV/0.3"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
 
 
-def load_countries():
-    if COUNTRIES_CACHE.exists() and time.time() - COUNTRIES_CACHE.stat().st_mtime < COUNTRIES_TTL:
+def cached_json(path, url, ttl):
+    if path.exists() and time.time() - path.stat().st_mtime < ttl:
         try:
-            return json.loads(COUNTRIES_CACHE.read_text())
+            return json.loads(path.read_text())
         except ValueError:
             pass
-    try:
-        data = json.loads(fetch(COUNTRIES_API))
-    except Exception as e:
-        if COUNTRIES_CACHE.exists():
-            try:
-                return json.loads(COUNTRIES_CACHE.read_text())
-            except ValueError:
-                pass
-        raise e
-    COUNTRIES_CACHE.write_text(json.dumps(data))
+    data = json.loads(fetch(url))
+    path.write_text(json.dumps(data))
     return data
 
 
+def load_countries():
+    return cached_json(RUNTIME / "countries.json", COUNTRIES_API, 7 * CACHE_TTL)
+
+
+def load_categories():
+    cats = cached_json(RUNTIME / "categories.json", CATEGORIES_API, 7 * CACHE_TTL)
+    known = {c["slug"] if isinstance(c, dict) and "slug" in c else str(c)
+             for c in cats}
+    return [c for c in POPULAR_CATEGORIES if c in known] or POPULAR_CATEGORIES[:1]
+
+
 def resolve_country(query):
-    """Accept a 2-letter code or a unique prefix of a country name."""
     q = query.strip().lower()
     countries = load_countries()
     for c in countries:
@@ -96,16 +109,39 @@ def resolve_country(query):
     raise ValueError(f"unknown country {query!r}")
 
 
-def playlist_path(code):
-    return RUNTIME / f"playlist-{code.lower()}.m3u"
+def cache_path(key):
+    safe = re.sub(r"[^a-z0-9._-]", "_", key.lower())
+    return RUNTIME / f"playlist-{safe}.m3u"
 
 
-def get_playlist(code):
-    """Download once per day, then parse from cache."""
-    path = playlist_path(code)
-    fresh = path.exists() and time.time() - path.stat().st_mtime < 24 * 3600
+SOURCE_ROUTES = {
+    "global:index": (f"{IPTV_ORG}/index.m3u", "Global • All iptv-org channels"),
+    "global:freetv": (FREE_TV_URL, "Global • Free-TV collection"),
+}
+
+
+def resolve_source(src):
+    """Return (url, cache_key, label)."""
+    src = src.strip()
+    low = src.lower()
+    if low.startswith("category:"):
+        cat = low.split(":", 1)[1].strip()
+        if cat not in POPULAR_CATEGORIES:
+            raise ValueError(f"unknown category {cat!r}")
+        return f"{IPTV_ORG}/categories/{cat}.m3u", f"category:{cat}", f"{cat.title()} (all countries)"
+    if low in SOURCE_ROUTES:
+        url, label = SOURCE_ROUTES[low]
+        return url, low, label
+    country = resolve_country(src)
+    code = country["code"].lower()
+    return f"{IPTV_ORG}/countries/{code}.m3u", f"country:{code}", country["name"]
+
+
+def get_playlist(url, key):
+    path = cache_path(key)
+    fresh = path.exists() and time.time() - path.stat().st_mtime < CACHE_TTL
     if not fresh:
-        data = fetch(PLAYLIST_URL.format(code.lower()), timeout=60)
+        data = fetch(url)
         RUNTIME.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".m3u.new")
         tmp.write_bytes(data)
@@ -171,9 +207,35 @@ def is_running(pid):
         return False
 
 
+def do_sources():
+    opts = [{"value": "favorites", "label": "★ Favorites"}]
+    for key, (_, label) in SOURCE_ROUTES.items():
+        opts.append({"value": key, "label": label})
+    try:
+        for cat in load_categories():
+            opts.append({
+                "value": f"category:{cat}",
+                "label": f"Category • {cat.title()}",
+            })
+    except Exception:
+        pass
+    try:
+        for c in load_countries():
+            opts.append({
+                "value": str(c["code"]).lower(),
+                "label": c["name"],
+            })
+    except Exception:
+        pass
+    return {"ok": True, "sources": opts}
+
+
 def do_channels(params):
     source = str(params.get("source", "")).strip()
     query = str(params.get("q", "")).strip().lower()
+
+    if not source:
+        return err("no source given")
 
     if source.lower() in ("favorites", "favorite", "fav", "starred"):
         chans = [
@@ -184,20 +246,17 @@ def do_channels(params):
         total = len(chans)
         label = "Favorites"
     else:
-        if not source:
-            return err("no source given — pass a country code or 'favorites'")
         try:
-            country = resolve_country(source)
+            url, key, label = resolve_source(source)
         except ValueError as e:
             return err(str(e))
         except Exception as e:
-            return err(f"could not reach iptv-org: {e}")
+            return err(f"could not reach index: {e}")
         try:
-            chans = get_playlist(country["code"])
+            chans = get_playlist(url, key)
         except Exception as e:
             return err(f"playlist download failed: {e}")
         total = len(chans)
-        label = country["name"]
 
     if query:
         chans = [c for c in chans
@@ -271,13 +330,8 @@ def main():
     if cmd == "ping":
         out({"ok": True,
              "tools": {"mpv": bool(which("mpv")), "python3": True}})
-    elif cmd == "countries":
-        try:
-            cs = [{"name": c["name"], "code": c["code"]}
-                  for c in load_countries()]
-            out({"ok": True, "countries": cs})
-        except Exception as e:
-            out(err(f"iptv-org unreachable: {e}"))
+    elif cmd == "sources":
+        out(do_sources())
     elif cmd == "channels":
         out(do_channels(req))
     elif cmd == "add":
