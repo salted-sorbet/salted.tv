@@ -70,7 +70,10 @@ REGION_LABELS = {
 
 
 def out(obj):
-    print(json.dumps(obj))
+    s = json.dumps(obj)
+    if len(s) > 16 * 1024 * 1024:
+        s = json.dumps(err("response too large"))
+    print(s)
     sys.stdout.flush()
 
 
@@ -108,10 +111,18 @@ def fetch(url, timeout=60):
 
 
 def capped_text(path):
-    st = path.stat()
-    if st.st_size > MAX_RESPONSE_BYTES:
-        raise ValueError(f"{path.name} exceeds {MAX_RESPONSE_BYTES} byte limit")
-    return path.read_text(encoding="utf-8", errors="replace")
+    chunks = []
+    total = 0
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(64 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_RESPONSE_BYTES:
+                raise ValueError(f"{path.name} exceeds {MAX_RESPONSE_BYTES} byte limit")
+            chunks.append(chunk)
+    return b"".join(chunks).decode("utf-8", "replace")
 
 
 def cached_json(path, url, ttl):
@@ -225,11 +236,13 @@ def parse_m3u(path):
     channels = []
     attrs_re = re.compile(r'([a-zA-Z0-9-]+)="([^"]*)"')
     pending = None
-    if path.exists() and path.stat().st_size > MAX_RESPONSE_BYTES:
-        raise ValueError(f"{path.name} exceeds {MAX_RESPONSE_BYTES} byte limit")
-    with open(path, encoding="utf-8", errors="replace") as f:
-        for line in f:
-            line = line.strip()
+    total = 0
+    with open(path, "rb") as f:
+        for raw in f:
+            total += len(raw)
+            if total > MAX_RESPONSE_BYTES:
+                raise ValueError(f"{path.name} exceeds {MAX_RESPONSE_BYTES} byte limit")
+            line = raw.decode("utf-8", "replace").strip()
             if line.startswith("#EXTINF:"):
                 _, _, title = line.partition(",")
                 attrs = dict(attrs_re.findall(line))
