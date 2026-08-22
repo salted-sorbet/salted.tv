@@ -25,7 +25,7 @@ Panel {
     property string selUrl: ""
     property bool busy: false
     property string busyLabel: ""
-    property string statusText: "IPTV — pick a country from the dropdown, click any channel to watch"
+    property string statusText: "IPTV — favorites shown by default; pick a source or paste a playlist URL"
     property bool playing: false
     property int loadGen: 0
     property int statusGen: 0
@@ -265,7 +265,16 @@ Panel {
             if (!resp || !resp.ok)
                 return ;
             root.sources = resp.sources || [];
+            defaultToFavorites();
         });
+    }
+
+    function defaultToFavorites() {
+        if (root.sourceCode || root.viewingFavorites)
+            return ;
+        root.viewingFavorites = true;
+        countryDropdown.value = "favorites";
+        loadChannels();
     }
 
     function loadCustom(urlSource) {
@@ -289,6 +298,7 @@ Panel {
     }
 
     function refreshCurrent() {
+        defaultToFavorites();
         loadFavorites();
         loadChannels();
         pollStatus();
