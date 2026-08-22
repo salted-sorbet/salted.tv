@@ -86,6 +86,7 @@ MAX_RESPONSE_BYTES = 32 * 1024 * 1024
 
 
 def fetch(url, timeout=60):
+    deadline = time.monotonic() + timeout
     req = urllib.request.Request(url, headers={"User-Agent": "salted.tv/0.4"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         length = r.headers.get("Content-Length")
@@ -94,7 +95,9 @@ def fetch(url, timeout=60):
         chunks = []
         total = 0
         while True:
-            chunk = r.read(64 * 1024)
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"total download time exceeded {timeout}s")
+            chunk = r.read1(64 * 1024)
             if not chunk:
                 break
             total += len(chunk)

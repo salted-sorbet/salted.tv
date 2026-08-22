@@ -94,6 +94,13 @@ Panel {
         params = params || {
         };
         if (bridgeProc.running) {
+            if (cmd === "status") {
+                for (var i = 0; i < root.pending.length; i++)
+                    if (root.pending[i].cmd === "status")
+                        return ;
+            }
+            if (root.pending.length >= 16)
+                return ;
             root.pending.push({
                 "cmd": cmd,
                 "params": params,
@@ -166,7 +173,8 @@ Panel {
 
     function loadChannels() {
         var src = root.viewingFavorites ? "favorites" : root.sourceCode.trim();
-        console.log("[salted.tv] loadChannels src=" + src + " q=" + root.searchText);
+        var dbg = src.lastIndexOf("url:", 0) === 0 ? "url:<redacted>" : src;
+        console.log("[salted.tv] loadChannels src=" + dbg + " q=" + root.searchText);
         if (!src) {
             statusText = "Pick a country first";
             return ;

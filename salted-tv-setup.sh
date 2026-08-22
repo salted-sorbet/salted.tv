@@ -8,7 +8,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUNTIME="${XDG_CACHE_HOME:-$HOME/.cache}/salted.tv"
 BRIDGE_SRC="$DIR/bridge/salted-tv-bridge.py"
 BRIDGE_DST="$RUNTIME/salted-tv-bridge.py"
-VERSION="$(jq -er '.version' "$DIR/manifest.json" 2>/dev/null || echo "0.5.2")"
+VERSION="$(jq -er '.version' "$DIR/manifest.json" 2>/dev/null || echo "0.5.3")"
 VERSION_FILE="$RUNTIME/version"
 
 say()  { printf '\033[1;36m[salted.tv]\033[0m %s\n' "$*"; }
