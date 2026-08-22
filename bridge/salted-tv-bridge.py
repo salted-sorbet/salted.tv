@@ -107,11 +107,18 @@ def fetch(url, timeout=60):
     return b"".join(chunks)
 
 
+def capped_text(path):
+    st = path.stat()
+    if st.st_size > MAX_RESPONSE_BYTES:
+        raise ValueError(f"{path.name} exceeds {MAX_RESPONSE_BYTES} byte limit")
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
 def cached_json(path, url, ttl):
     if path.exists() and time.time() - path.stat().st_mtime < ttl:
         try:
-            return json.loads(path.read_text())
-        except ValueError:
+            return json.loads(capped_text(path))
+        except (OSError, ValueError):
             pass
     data = json.loads(fetch(url))
     path.write_text(json.dumps(data))
@@ -218,6 +225,8 @@ def parse_m3u(path):
     channels = []
     attrs_re = re.compile(r'([a-zA-Z0-9-]+)="([^"]*)"')
     pending = None
+    if path.exists() and path.stat().st_size > MAX_RESPONSE_BYTES:
+        raise ValueError(f"{path.name} exceeds {MAX_RESPONSE_BYTES} byte limit")
     with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
             line = line.strip()
@@ -240,7 +249,7 @@ def parse_m3u(path):
 
 def load_favorites():
     try:
-        favs = json.loads(FAVORITES_FILE.read_text())
+        favs = json.loads(capped_text(FAVORITES_FILE))
         if isinstance(favs, list):
             return favs
     except (OSError, ValueError):
@@ -258,7 +267,7 @@ def save_favorites(favs):
 
 def load_urls():
     try:
-        data = json.loads(URLS_FILE.read_text())
+        data = json.loads(capped_text(URLS_FILE))
         return data if isinstance(data, list) else []
     except (OSError, ValueError):
         return []
@@ -309,7 +318,7 @@ def do_urls():
 
 def load_state():
     try:
-        d = json.loads(STATE_FILE.read_text())
+        d = json.loads(capped_text(STATE_FILE))
         return d if isinstance(d, dict) else {}
     except (OSError, ValueError):
         return {}

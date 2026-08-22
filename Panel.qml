@@ -63,7 +63,8 @@ Panel {
 
         stdout: SplitParser {
             onRead: function(data) {
-                bridgeProc.collected += data;
+                if (bridgeProc.collected.length < 33554432)
+                    bridgeProc.collected += data;
             }
         }
 
