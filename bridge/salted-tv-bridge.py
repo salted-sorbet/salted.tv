@@ -37,6 +37,8 @@ HOME = Path.home()
 RUNTIME = Path(os.environ.get("XDG_CACHE_HOME", HOME / ".cache")) / "salted.tv"
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config")) / "salted.tv"
 FAVORITES_FILE = CONFIG_DIR / "favorites.json"
+URLS_FILE = CONFIG_DIR / "urls.json"
+MAX_SAVED_URLS = 20
 PID_FILE = RUNTIME / "play.pid"
 LOG_FILE = RUNTIME / "play.log"
 
@@ -249,6 +251,56 @@ def save_favorites(favs):
     os.replace(tmp, FAVORITES_FILE)
 
 
+def load_urls():
+    try:
+        data = json.loads(URLS_FILE.read_text())
+        return data if isinstance(data, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def save_urls(items):
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = URLS_FILE.with_suffix(".json.new")
+    tmp.write_text(json.dumps(items, indent=2))
+    os.replace(tmp, URLS_FILE)
+
+
+def url_label(u):
+    try:
+        from urllib.parse import urlparse
+        p = urlparse(u)
+        parts = [s for s in (p.path or "").split("/") if s]
+        tail = ""
+        if parts:
+            tail = parts[-1]
+            for ext in (".m3u8", ".m3u"):
+                if tail.lower().endswith(ext):
+                    tail = tail[: -len(ext)]
+                    break
+        host = (p.hostname or "").lower()
+        if host.startswith("www."):
+            host = host[4:]
+        label = f"{host}/{tail}" if tail else host
+        return label or u
+    except Exception:
+        return u
+
+
+def remember_url(raw_url):
+    raw_url = str(raw_url).strip()
+    if not raw_url.lower().startswith(("http://", "https://")):
+        return
+    items = [i for i in load_urls() if isinstance(i, dict)]
+    items = [i for i in items if i.get("url") != raw_url]
+    items.insert(0, {"url": raw_url, "name": url_label(raw_url)})
+    save_urls(items[:MAX_SAVED_URLS])
+
+
+def do_urls():
+    return {"ok": True, "urls": load_urls()}
+
+
 def read_pid():
     try:
         return int(PID_FILE.read_text().strip())
@@ -308,6 +360,8 @@ def do_channels(params):
         except Exception as e:
             return err(f"playlist download failed: {e}")
         total = len(chans)
+        if source.lower().startswith("url:"):
+            remember_url(source[4:].strip())
 
     if query:
         chans = [c for c in chans
@@ -410,6 +464,13 @@ def main():
         out(do_play(req))
     elif cmd == "stop":
         out({"ok": True, "stopped": kill_player()})
+    elif cmd == "urls":
+        out(do_urls())
+    elif cmd == "urls_remove":
+        u = str(req.get("url", "")).strip()
+        items = [i for i in load_urls() if isinstance(i, dict) and i.get("url") != u]
+        save_urls(items)
+        out({"ok": True})
     elif cmd == "status":
         pid = read_pid()
         out({"ok": True, "playing": is_running(pid), "pid": pid})

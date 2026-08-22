@@ -264,8 +264,19 @@ Panel {
         request("sources", {}, function(resp) {
             if (!resp || !resp.ok)
                 return ;
-            root.sources = resp.sources || [];
-            defaultToFavorites();
+            var opts = resp.sources || [];
+            request("urls", {}, function(u) {
+                if (u && u.ok && u.urls && u.urls.length) {
+                    for (var i = 0; i < u.urls.length; i++) {
+                        opts.push({
+                            "value": "url:" + u.urls[i].url,
+                            "label": "⏵ " + sanitize(u.urls[i].name || u.urls[i].url)
+                        });
+                    }
+                }
+                root.sources = opts;
+                defaultToFavorites();
+            });
         });
     }
 
@@ -294,6 +305,7 @@ Panel {
             }
             applyChannels(resp);
             statusText = resp.country + " • " + resp.count + " channels";
+            loadSources();
         });
     }
 
