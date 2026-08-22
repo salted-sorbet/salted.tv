@@ -245,9 +245,10 @@ def load_favorites():
 
 
 def save_favorites(favs):
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     tmp = FAVORITES_FILE.with_suffix(".json.new")
     tmp.write_text(json.dumps(favs, indent=2))
+    os.chmod(tmp, 0o600)
     os.replace(tmp, FAVORITES_FILE)
 
 
@@ -260,9 +261,10 @@ def load_urls():
 
 
 def save_urls(items):
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     tmp = URLS_FILE.with_suffix(".json.new")
     tmp.write_text(json.dumps(items, indent=2))
+    os.chmod(tmp, 0o600)
     os.replace(tmp, URLS_FILE)
 
 
