@@ -121,15 +121,20 @@ Panel {
 
     function sanitize(s) {
         var t = String(s === undefined || s === null ? "" : s);
-        t = t.replace(/<[^>]*>/g, " ");
-        t = t.replace(/&#(\d+);/g, function(m, d) {
-            return String.fromCodePoint(parseInt(d, 10));
-        });
-        t = t.replace(/&#x([0-9a-fA-F]+);/g, function(m, h) {
-            return String.fromCodePoint(parseInt(h, 16));
-        });
-        t = t.replace(/&quot;/g, '"').replace(/&apos;/g, "'")
-             .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+        var prev = "";
+        for (var i = 0; i < 4 && t !== prev; i++) {
+            prev = t;
+            t = t.replace(/&#(\d+);/g, function(m, d) {
+                return String.fromCodePoint(parseInt(d, 10));
+            });
+            t = t.replace(/&#x([0-9a-fA-F]+);/g, function(m, h) {
+                return String.fromCodePoint(parseInt(h, 16));
+            });
+            t = t.replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+                 .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+                 .replace(/&amp;/g, "&");
+            t = t.replace(/<[^>]*>/g, " ");
+        }
         return t.replace(/\s+/g, " ").trim();
     }
 
@@ -420,6 +425,7 @@ Panel {
                             Text {
                                 textFormat: Text.PlainText
                                 text: root.busy ? root.busyLabel : "Playing"
+                                textFormat: Text.PlainText
                                 font.family: Style.font.family
                                 font.pixelSize: Style.font.caption
                                 color: Color.accent
@@ -575,6 +581,7 @@ Panel {
                     anchors.centerIn: parent
                     visible: root.busy
                     text: root.busyLabel
+                    textFormat: Text.PlainText
                     font.family: Style.font.family
                     font.pixelSize: Style.font.caption
                     color: Color.accent

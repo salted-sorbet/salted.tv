@@ -87,8 +87,13 @@ dead or geo-blocked links are normal; ☆ keeps the ones that work for you.
 - Every remote response is streamed in 64 KB chunks with a hard cap of
   **32 MB** (checked against `Content-Length` first); oversized responses
   abort before parsing or touching the disk cache.
-- Channel names from playlists are sanitized (tags stripped, HTML entities
-  decoded) before they reach the shell UI.
+- Channel names from playlists are sanitized (entities decoded, then tags
+  stripped, repeated until stable) and every dynamic label renders as plain
+  text, so playlist metadata can never be interpreted as markup or pull in
+  remote resources.
+- Stop only signals a cached PID after `/proc` confirms it is still an mpv
+  process launched with this plugin's title marker, so PID reuse can never
+  kill an unrelated process group.
 - Nothing is installed outside `~/.config` / `~/.cache`; no services, no
   build steps.
 

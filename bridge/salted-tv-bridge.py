@@ -256,14 +256,24 @@ def read_pid():
         return None
 
 
-def is_running(pid):
-    if pid is None:
+def pid_is_ours(pid):
+    """True only if /proc still says this pid is an mpv we started."""
+    if pid is None or pid <= 1:
         return False
     try:
-        os.kill(pid, 0)
-        return True
+        proc = Path("/proc") / str(pid)
+        if proc.joinpath("comm").read_text().strip() != "mpv":
+            return False
+        args = [a.decode("utf-8", "replace")
+                for a in proc.joinpath("cmdline").read_bytes().split(b"\0") if a]
+        return bool(args) and Path(args[0]).name == "mpv" \
+            and any("salted.tv" in a for a in args)
     except OSError:
         return False
+
+
+def is_running(pid):
+    return pid_is_ours(pid)
 
 
 def do_sources():
@@ -343,7 +353,11 @@ def do_play(params):
 
 def kill_player():
     pid = read_pid()
-    if pid is None:
+    if not pid_is_ours(pid):
+        try:
+            PID_FILE.unlink()
+        except OSError:
+            pass
         return False
     try:
         os.killpg(os.getpgid(pid), signal.SIGTERM)
