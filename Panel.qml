@@ -262,11 +262,9 @@ Panel {
 
     function loadSources() {
         request("sources", {}, function(resp) {
-            if (!resp || !resp.ok)
-                return ;
-            var opts = resp.sources || [];
+            var opts = (resp && resp.ok) ? (resp.sources || []) : [];
             request("urls", {}, function(u) {
-                if (u && u.ok && u.urls && u.urls.length) {
+                if (u && u.ok && u.urls) {
                     for (var i = 0; i < u.urls.length; i++) {
                         opts.push({
                             "value": "url:" + u.urls[i].url,
