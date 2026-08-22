@@ -188,6 +188,7 @@ Panel {
             applyChannels(resp);
             var scope = resp.total !== resp.count ? " • filtered " + resp.count + " of " + resp.total : " • " + resp.count + " channels";
             statusText = resp.country + scope;
+            rememberSource(root.viewingFavorites ? "favorites" : root.sourceCode);
         });
     }
 
@@ -281,9 +282,25 @@ Panel {
     function defaultToFavorites() {
         if (root.sourceCode || root.viewingFavorites)
             return ;
-        root.viewingFavorites = true;
-        countryDropdown.value = "favorites";
-        loadChannels();
+        request("state", {}, function(s) {
+            var last = (s && s.ok && s.state) ? String(s.state.lastSource || "") : "";
+            if (!root.sourceCode && !root.viewingFavorites) {
+                if (last && last !== "favorites") {
+                    root.sourceCode = last;
+                    root.viewingFavorites = false;
+                    countryDropdown.value = last;
+                } else {
+                    root.viewingFavorites = true;
+                    countryDropdown.value = "favorites";
+                }
+                loadChannels();
+            }
+        });
+    }
+
+    function rememberSource(src) {
+        request("state", {"source": src}, function() {
+        });
     }
 
     function loadCustom(urlSource) {
@@ -303,6 +320,10 @@ Panel {
             }
             applyChannels(resp);
             statusText = resp.country + " • " + resp.count + " channels";
+            root.viewingFavorites = false;
+            root.sourceCode = urlSource;
+            countryDropdown.value = urlSource;
+            rememberSource(urlSource);
             loadSources();
         });
     }

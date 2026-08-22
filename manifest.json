@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "salted.tv",
   "name": "salted.tv",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "author": "salted",
   "description": "IPTV in your bar — browse thousands of free-to-air channels from the iptv-org index by country, filter, favorite, and play in mpv. No tuner hardware needed. GUI forked from tenzin.animechy (GPL-3.0).",
   "kinds": ["bar-widget"],

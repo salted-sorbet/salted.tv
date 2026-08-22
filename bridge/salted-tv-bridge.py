@@ -38,6 +38,7 @@ RUNTIME = Path(os.environ.get("XDG_CACHE_HOME", HOME / ".cache")) / "salted.tv"
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config")) / "salted.tv"
 FAVORITES_FILE = CONFIG_DIR / "favorites.json"
 URLS_FILE = CONFIG_DIR / "urls.json"
+STATE_FILE = CONFIG_DIR / "state.json"
 MAX_SAVED_URLS = 20
 PID_FILE = RUNTIME / "play.pid"
 LOG_FILE = RUNTIME / "play.log"
@@ -303,6 +304,31 @@ def do_urls():
     return {"ok": True, "urls": load_urls()}
 
 
+def load_state():
+    try:
+        d = json.loads(STATE_FILE.read_text())
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_state(st):
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    tmp = STATE_FILE.with_suffix(".json.new")
+    tmp.write_text(json.dumps(st, indent=2))
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, STATE_FILE)
+
+
+def do_state(params):
+    src = params.get("source", None)
+    if src is not None:
+        st = load_state()
+        st["lastSource"] = str(src)[:2048]
+        save_state(st)
+    return {"ok": True, "state": load_state()}
+
+
 def read_pid():
     try:
         return int(PID_FILE.read_text().strip())
@@ -468,6 +494,8 @@ def main():
         out({"ok": True, "stopped": kill_player()})
     elif cmd == "urls":
         out(do_urls())
+    elif cmd == "state":
+        out(do_state(req))
     elif cmd == "urls_remove":
         u = str(req.get("url", "")).strip()
         items = [i for i in load_urls() if isinstance(i, dict) and i.get("url") != u]
