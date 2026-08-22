@@ -425,7 +425,6 @@ Panel {
                             Text {
                                 textFormat: Text.PlainText
                                 text: root.busy ? root.busyLabel : "Playing"
-                                textFormat: Text.PlainText
                                 font.family: Style.font.family
                                 font.pixelSize: Style.font.caption
                                 color: Color.accent
