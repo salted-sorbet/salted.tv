@@ -27,6 +27,7 @@ import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -110,10 +111,27 @@ def fetch(url, timeout=60):
     return b"".join(chunks)
 
 
+def _open_regular(path):
+    """Open for reading, refusing non-regular files (FIFOs etc.) without
+    ever blocking on them. O_NONBLOCK makes open()/read() return
+    immediately even for FIFOs; fstat then verifies the fd itself, so
+    there is no swap window between check and read."""
+    path = Path(path)
+    fd = os.open(str(path), os.O_RDONLY | os.O_NONBLOCK
+                 | getattr(os, "O_CLOEXEC", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ValueError(f"{path.name} is not a regular file")
+        return fd
+    except ValueError:
+        os.close(fd)
+        raise
+
+
 def capped_text(path):
     chunks = []
     total = 0
-    with open(path, "rb") as f:
+    with os.fdopen(_open_regular(path), "rb") as f:
         while True:
             chunk = f.read(64 * 1024)
             if not chunk:
@@ -237,26 +255,41 @@ def parse_m3u(path):
     attrs_re = re.compile(r'([a-zA-Z0-9-]+)="([^"]*)"')
     pending = None
     total = 0
-    with open(path, "rb") as f:
-        for raw in f:
-            total += len(raw)
+    buf = b""
+
+    def handle(raw):
+        nonlocal pending
+        line = raw.decode("utf-8", "replace").strip()
+        if line.startswith("#EXTINF:"):
+            _, _, title = line.partition(",")
+            attrs = dict(attrs_re.findall(line))
+            pending = {
+                "name": title.strip(),
+                "group": attrs.get("group-title", ""),
+                "logo": attrs.get("tvg-logo", ""),
+                "url": "",
+            }
+        elif line and not line.startswith("#") and pending is not None:
+            pending["url"] = line
+            if pending["name"]:
+                channels.append(pending)
+            pending = None
+
+    with os.fdopen(_open_regular(path), "rb") as f:
+        while True:
+            chunk = f.read(64 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
             if total > MAX_RESPONSE_BYTES:
                 raise ValueError(f"{path.name} exceeds {MAX_RESPONSE_BYTES} byte limit")
-            line = raw.decode("utf-8", "replace").strip()
-            if line.startswith("#EXTINF:"):
-                _, _, title = line.partition(",")
-                attrs = dict(attrs_re.findall(line))
-                pending = {
-                    "name": title.strip(),
-                    "group": attrs.get("group-title", ""),
-                    "logo": attrs.get("tvg-logo", ""),
-                    "url": "",
-                }
-            elif line and not line.startswith("#") and pending is not None:
-                pending["url"] = line
-                if pending["name"]:
-                    channels.append(pending)
-                pending = None
+            buf += chunk
+            parts = buf.split(b"\n")
+            buf = parts.pop()
+            for raw in parts:
+                handle(raw)
+    if buf:
+        handle(buf)
     return channels
 
 
