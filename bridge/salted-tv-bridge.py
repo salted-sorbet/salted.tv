@@ -30,6 +30,7 @@ import signal
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 from pathlib import Path
@@ -112,12 +113,13 @@ def fetch(url, timeout=60):
 
 
 def _open_regular(path):
-    """Open for reading, refusing non-regular files (FIFOs etc.) without
-    ever blocking on them. O_NONBLOCK makes open()/read() return
-    immediately even for FIFOs; fstat then verifies the fd itself, so
-    there is no swap window between check and read."""
+    """Open for reading, refusing non-regular files (FIFOs etc.) and
+    symlinks without ever blocking on them. O_NONBLOCK makes open()/read()
+    return immediately even for FIFOs; O_NOFOLLOW refuses symlinked paths;
+    fstat then verifies the fd itself, so there is no swap window between
+    check and read."""
     path = Path(path)
-    fd = os.open(str(path), os.O_RDONLY | os.O_NONBLOCK
+    fd = os.open(str(path), os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW
                  | getattr(os, "O_CLOEXEC", 0))
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
@@ -125,6 +127,26 @@ def _open_regular(path):
         return fd
     except ValueError:
         os.close(fd)
+        raise
+
+
+def atomic_write(path, data):
+    """Write bytes to a random exclusive 0600 temp file in the target
+    directory, then atomically replace the destination. Never follows a
+    planted symlink at either the temp or final path."""
+    path = Path(path)
+    fd, tmp = tempfile.mkstemp(prefix="." + path.name + ".",
+                               suffix=".tmp", dir=str(path.parent))
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
         raise
 
 
@@ -150,7 +172,7 @@ def cached_json(path, url, ttl):
         except (OSError, ValueError):
             pass
     data = json.loads(fetch(url))
-    path.write_text(json.dumps(data))
+    atomic_write(path, json.dumps(data).encode())
     return data
 
 
@@ -244,9 +266,7 @@ def get_playlist(url, key):
     if not fresh:
         data = fetch(url)
         RUNTIME.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".m3u.new")
-        tmp.write_bytes(data)
-        os.replace(tmp, path)
+        atomic_write(path, data)
     return parse_m3u(path)
 
 
@@ -305,10 +325,7 @@ def load_favorites():
 
 def save_favorites(favs):
     CONFIG_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-    tmp = FAVORITES_FILE.with_suffix(".json.new")
-    tmp.write_text(json.dumps(favs, indent=2))
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, FAVORITES_FILE)
+    atomic_write(FAVORITES_FILE, json.dumps(favs, indent=2).encode())
 
 
 def load_urls():
@@ -321,10 +338,7 @@ def load_urls():
 
 def save_urls(items):
     CONFIG_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-    tmp = URLS_FILE.with_suffix(".json.new")
-    tmp.write_text(json.dumps(items, indent=2))
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, URLS_FILE)
+    atomic_write(URLS_FILE, json.dumps(items, indent=2).encode())
 
 
 def url_label(u):
@@ -372,10 +386,7 @@ def load_state():
 
 def save_state(st):
     CONFIG_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-    tmp = STATE_FILE.with_suffix(".json.new")
-    tmp.write_text(json.dumps(st, indent=2))
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, STATE_FILE)
+    atomic_write(STATE_FILE, json.dumps(st, indent=2).encode())
 
 
 def do_state(params):
@@ -479,7 +490,12 @@ def do_play(params):
     RUNTIME.mkdir(parents=True, exist_ok=True)
     cmd = ["mpv", "--force-window=immediate", "--no-terminal",
            "--really-quiet", f"--title=salted.tv • {name or 'IPTV'}", url]
-    with open(LOG_FILE, "ab") as log:
+    try:
+        fd = os.open(str(LOG_FILE), os.O_WRONLY | os.O_APPEND | os.O_CREAT
+                     | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0), 0o600)
+    except OSError as e:
+        return err(f"log file unsafe: {e}")
+    with os.fdopen(fd, "ab") as log:
         log.write(f"\n=== {time.strftime('%F %T')} play {name!r} ===\n".encode())
         log.flush()
         proc = subprocess.Popen(
@@ -487,7 +503,7 @@ def do_play(params):
             stdin=subprocess.DEVNULL,
             start_new_session=True,
         )
-    PID_FILE.write_text(str(proc.pid) + "\n")
+    atomic_write(PID_FILE, str(proc.pid).encode() + b"\n")
     return {"ok": True, "pid": proc.pid}
 
 

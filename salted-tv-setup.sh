@@ -8,7 +8,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUNTIME="${XDG_CACHE_HOME:-$HOME/.cache}/salted.tv"
 BRIDGE_SRC="$DIR/bridge/salted-tv-bridge.py"
 BRIDGE_DST="$RUNTIME/salted-tv-bridge.py"
-VERSION="$(jq -er '.version' "$DIR/manifest.json" 2>/dev/null || echo "0.5.6")"
+VERSION="$(jq -er '.version' "$DIR/manifest.json" 2>/dev/null || echo "0.5.7")"
 VERSION_FILE="$RUNTIME/version"
 
 say()  { printf '\033[1;36m[salted.tv]\033[0m %s\n' "$*"; }
@@ -26,7 +26,10 @@ if [[ -x "$BRIDGE_DST" && -f "$VERSION_FILE" && "$(cat "$VERSION_FILE")" == "$VE
 fi
 
 say "installing bridge $VERSION → $BRIDGE_DST"
-install -Dm0755 "$BRIDGE_SRC" "$BRIDGE_DST"
+STAGE="$(mktemp -d "$RUNTIME/.install.XXXXXX")"
+install -m0755 "$BRIDGE_SRC" "$STAGE/salted-tv-bridge.py"
+mv -f "$STAGE/salted-tv-bridge.py" "$BRIDGE_DST"
+rmdir "$STAGE"
 
 # Drop stale SDR-era caches so the new bridge starts clean.
 rm -f "$RUNTIME/version" "$RUNTIME"/playlist-*.m3u 2>/dev/null || true
@@ -38,8 +41,9 @@ else
   say "bridge ping OK"
 fi
 
-printf '%s\n' "$VERSION" > "$VERSION_FILE.new"
-mv -f "$VERSION_FILE.new" "$VERSION_FILE"
+VFILE="$(mktemp "$RUNTIME/.version.XXXXXX")"
+printf '%s\n' "$VERSION" > "$VFILE"
+mv -f "$VFILE" "$VERSION_FILE"
 
 say "installed $BRIDGE_DST ($VERSION) — ready"
 echo "SALTEDTV_RESTART_SHELL=1"
